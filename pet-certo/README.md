@@ -1,55 +1,48 @@
-# PetCerto 🐾
+# PetCerto
 
-Sistema de adoção de animais com matching inteligente — projeto da disciplina
-de Fábrica de Software (integrado com Tópicos Avançados), UNINASSAU, 2026.2.
+Sistema de adoção de animais para a disciplina de Fábrica de Software (integrado com Tópicos Avançados) - UNINASSAU, 2026.2.
 
-Repositório: https://github.com/lucascarneiroo/pet-certo
+A ideia é resolver um problema real de abrigos: hoje a adoção é feita só pela foto do animal, e isso gera bastante devolução depois porque o bicho não combina com a rotina de quem adotou. O sistema vai cruzar o perfil do adotante com o perfil do animal pra sugerir adoções com mais chance de dar certo.
 
-## O problema
+## Time
 
-Abrigos e ONGs fazem adoção de forma manual, quase sempre só pela foto do
-animal. Isso gera uma taxa alta de devolução: o animal não combina com a
-rotina, o espaço ou a experiência do adotante. O PetCerto resolve isso
-casando adotante e animal por **compatibilidade real**.
+- PO / Scrum Master: Monique Rafaela de Carvalho Lopes
+- Backend: Lucas Oliveira Carneiro
+- Frontend: José Carlos Moura Silva
+- Banco de dados e Documentação: Henrique Márcio Silva da Hora
 
-## Organização do repositório
+## Como está organizado
 
-Este projeto é dividido entre backend e frontend, times separados que se
-comunicam por uma API (não é um app único):
+O projeto é separado em backend e frontend, que conversam entre si por uma API. Não é um programa só, então backend e frontend podem ser desenvolvidos separado.
 
-```
 pet-certo/
-├── backend/     ← API REST em Python (autenticação, regras de negócio, banco de dados)
-├── frontend/    ← interface do sistema (tecnologia a definir pela equipe)
-└── docs/        ← arquitetura, diagramas, modelo de dados, documentação da API
-```
+├── backend/ -> API em Python (login, cadastro, permissões, CRUD, banco)
+├── frontend/ -> interface (ainda sendo definida)
+└── docs/ -> arquitetura, diagramas, documentação da API
 
-- **Backend:** ver [`backend/README.md`](backend/README.md) para rodar localmente.
-- **Frontend:** ver [`frontend/README.md`](frontend/README.md) para saber como consumir a API.
-- **Documentação técnica:** ver [`docs/`](docs/) — arquitetura, diagrama de classes, MER, modelo relacional e status de cada sprint.
-
-## Status do projeto
-
-| Entrega | Status |
-|---|---|
-| Arquitetura, diagrama de classes, MER, modelo relacional | ✅ [`docs/`](docs/) |
-| Banco de dados criado e conectado | ✅ |
-| Login funcional | ✅ |
-| Cadastro de usuários | ✅ |
-| Controle de perfis | ✅ |
-| CRUD principal (animais) | ✅ |
-| Deploy local do backend | ✅ |
-| Frontend | ⏳ a cargo da equipe |
-| Algoritmo de compatibilidade (IA/otimização) | ⏳ próxima sprint |
-
-Detalhamento completo, item a item: [`docs/status-sprint.md`](docs/status-sprint.md).
 
 ## Tecnologias
 
-- **Backend:** Python 3 (biblioteca padrão apenas, sem frameworks), SQLite
-- **Frontend:** a definir pela equipe
-- **Versionamento:** Git + GitHub
+- Backend: Python 3, sem framework (só biblioteca padrão), SQLite
+- Frontend: a definir
+- Git/GitHub pra versionamento
 
-## Equipe
+## Rodando o backend
 
-_Preencher com os nomes e papéis de cada integrante (Scrum Master, Product Owner, Dev Backend, Dev Frontend, Responsável por Banco/Documentação)._
+Entra na pasta backend e roda:
+
+```bash
+python main.py
+```
+
+Isso sobe o servidor em `http://localhost:8000`. Na primeira vez ele já cria o banco e um usuário admin (`admin@petcerto.com` / `admin123`, só pra testes).
+
+Pra testar se tá tudo funcionando sem precisar do frontend pronto, abre outro terminal e roda:
+
+```bash
+python scripts/demo_cliente.py
+```
+
+Ele simula um frontend chamando a API inteira (login, cadastro, criar/editar/excluir animal) e mostra se deu tudo certo.
+
+Documentação das rotas da API: `docs/api.md`.
