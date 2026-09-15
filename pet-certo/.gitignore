@@ -1,0 +1,25 @@
+# Ambiente virtual Python
+venv/
+env/
+.venv/
+
+# Cache do Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Banco de dados local (gerado em tempo de execução, não versionar)
+backend/data/*.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Dependências do frontend, quando existirem
+frontend/node_modules/
+frontend/build/
+frontend/dist/
