@@ -1,0 +1,7 @@
+# Backend do PetCerto usa apenas a biblioteca padrão do Python nesta sprint
+# (sqlite3, http.server, hashlib, json — tudo já vem instalado com o Python).
+#
+# Não é preciso instalar nada com pip para rodar esta sprint.
+#
+# Dependência prevista para a próxima sprint (algoritmo de compatibilidade):
+# numpy
