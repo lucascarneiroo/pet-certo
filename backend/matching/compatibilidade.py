@@ -1,235 +1,183 @@
+"""Algoritmo de compatibilidade adotante x animal.
+
+Adaptação necessária ao schema do Henrique: a tabela Adotante não tem
+colunas de preferência declarada (não existe "porte desejado", "aceita
+crianças" etc. para o adotante — só cpf, endereço e scorePerfil). O que
+existe é o próprio histórico de interesse do adotante: Favorito e
+ManifestacaoInteresse. Por isso a preferência de cada adotante é aprendida
+a partir dos animais que ele já favoritou ou pelos quais já manifestou
+interesse (um recomendador baseado em conteúdo, comparando etiquetas),
+com um valor neutro quando ele ainda não interagiu com nada (cold start).
+
+Isso é calculado com três implementações equivalentes (usadas no benchmark):
+ingênua (loops Python puros), vetorizada (NumPy) e paralela (multiprocessing),
+igual ao que já era feito na versão anterior sobre SQLite — só a forma de
+montar os vetores de entrada mudou.
 """
-Algoritmo de compatibilidade adotante-animal — componente computacional
-avançado do projeto (integração com Tópicos Avançados).
-
-Resolve dois problemas:
-
-1. Calcular um SCORE DE COMPATIBILIDADE (0 a 1) entre cada par
-   adotante-animal, considerando critérios reais de adoção responsável
-   (porte, energia, convivência com crianças/outros pets, tipo de
-   moradia, experiência do adotante).
-
-2. A partir da matriz de scores, encontrar um PAREAMENTO ESTÁVEL entre
-   todos os adotantes e animais disponíveis, usando o algoritmo de
-   Gale-Shapley ("casamento estável"). Isso é um problema de
-   otimização combinatória de verdade: o sistema não está só
-   ordenando por nota, está resolvendo uma alocação em que ninguém
-   ganharia trocando de par depois de pronto.
-
-Sobre desempenho — três versões da mesma conta, para comparação:
-
-- calcular_matriz_scores_ingenua(): loop Python puro, par a par.
-  Existe só de referência para o benchmark.
-- calcular_matriz_scores(): vetorizada com NumPy — monta arrays e
-  deixa o NumPy calcular a matriz inteira de uma vez (broadcasting),
-  usando rotinas em C por baixo. Ordens de magnitude mais rápida que
-  o loop equivalente, mesmo em um único núcleo.
-- calcular_matriz_scores_paralelo(): divide os animais em blocos e
-  distribui entre processos (multiprocessing), usando vários núcleos
-  de CPU de verdade. Compensa a partir de bases maiores — para poucos
-  animais, o custo de criar processos é maior que o ganho.
-
-Números reais dessa comparação: rode `python -m matching.benchmark`.
-"""
-
-from __future__ import annotations
-
-import multiprocessing as mp
-from typing import Optional
+import multiprocessing
+from typing import List, Optional
 
 import numpy as np
 
-PESOS = {
-    "porte": 0.20,
-    "energia": 0.20,
-    "criancas": 0.15,
-    "outros_pets": 0.15,
-    "espaco": 0.15,
-    "experiencia": 0.15,
+from database.tags_padrao import CATEGORIAS_PADRAO, CATEGORIA_DA_TAG, TAGS_BOOLEANAS, TODAS_AS_TAGS
+
+_INDICE_DA_TAG = {tag: i for i, tag in enumerate(TODAS_AS_TAGS)}
+DIMENSAO = len(TODAS_AS_TAGS)
+
+PESOS_CATEGORIA = {"especie": 0.10, "porte": 0.20, "energia": 0.20, "espaco": 0.15, "experiencia": 0.10}
+PESOS_BOOLEANO = {
+    "Convive com Crianças": 0.10,
+    "Convive com Outros Pets": 0.10,
+    "Necessidades Especiais": 0.05,
 }
 
-_ORDEM_PORTE = {"pequeno": 0, "medio": 1, "grande": 2}
-_ORDEM_ENERGIA = {"baixo": 0, "medio": 1, "alto": 2}
+# vetor de pesos por tag (0 fora das categorias ordinais/booleanas relevantes)
+_PESO_ORDINAL = np.zeros(DIMENSAO)
+for tag, categoria in CATEGORIA_DA_TAG.items():
+    _PESO_ORDINAL[_INDICE_DA_TAG[tag]] = PESOS_CATEGORIA[categoria]
+
+_INDICES_BOOL = [_INDICE_DA_TAG[t] for t in TAGS_BOOLEANAS]
+_PESO_BOOL = np.array([PESOS_BOOLEANO[t] for t in TAGS_BOOLEANAS])
 
 
-# ---------------------------------------------------------------------
-# Versão vetorizada (NumPy) — a que o sistema usa de verdade
-# ---------------------------------------------------------------------
-
-def _campos_adotantes(adotantes: list[dict]) -> dict[str, np.ndarray]:
-    n = len(adotantes)
-    return {
-        "porte": np.array([_ORDEM_PORTE.get(a.get("preferencia_porte", "medio"), 1) for a in adotantes]).reshape(n, 1),
-        "energia": np.array([_ORDEM_ENERGIA.get(a.get("energia_desejada", "medio"), 1) for a in adotantes]).reshape(n, 1),
-        "tem_criancas": np.array([bool(a.get("tem_criancas", False)) for a in adotantes]).reshape(n, 1),
-        "tem_outros_pets": np.array([bool(a.get("tem_outros_pets", False)) for a in adotantes]).reshape(n, 1),
-        "apartamento": np.array([a.get("tipo_moradia", "apartamento") == "apartamento" for a in adotantes]).reshape(n, 1),
-        "experiencia_anos": np.array([float(a.get("experiencia_anos", 0)) for a in adotantes]).reshape(n, 1),
-    }
+def vetor_do_animal(tags_do_animal: List[str]) -> np.ndarray:
+    v = np.zeros(DIMENSAO)
+    for tag in tags_do_animal:
+        if tag in _INDICE_DA_TAG:
+            v[_INDICE_DA_TAG[tag]] = 1.0
+    return v
 
 
-def _campos_animais(animais: list[dict]) -> dict[str, np.ndarray]:
-    m = len(animais)
-    return {
-        "porte": np.array([_ORDEM_PORTE.get(a.get("porte", "medio"), 1) for a in animais]).reshape(1, m),
-        "energia": np.array([_ORDEM_ENERGIA.get(a.get("nivel_energia", "medio"), 1) for a in animais]).reshape(1, m),
-        "convive_criancas": np.array([bool(a.get("convive_criancas", False)) for a in animais]).reshape(1, m),
-        "convive_outros_pets": np.array([bool(a.get("convive_outros_pets", False)) for a in animais]).reshape(1, m),
-        "precisa_quintal": np.array([a.get("espaco_recomendado") == "casa_com_quintal" for a in animais]).reshape(1, m),
-        "necessita_experiencia": np.array([bool(a.get("necessidades_especiais")) for a in animais]).reshape(1, m),
-    }
+def matriz_dos_animais(lista_de_tags: List[List[str]]) -> np.ndarray:
+    return np.array([vetor_do_animal(tags) for tags in lista_de_tags]) if lista_de_tags else np.zeros((0, DIMENSAO))
 
 
-def calcular_matriz_scores(adotantes: list[dict], animais: list[dict]) -> np.ndarray:
-    """Calcula a matriz inteira de scores (n_adotantes x n_animais) de
-    uma vez, sem laço Python — cada célula é o score daquele adotante
-    com aquele animal."""
-    if not adotantes or not animais:
-        return np.zeros((len(adotantes), len(animais)))
+def vetor_de_preferencia(historico_de_tags: List[List[str]]) -> np.ndarray:
+    """Constrói o vetor de preferência de um adotante a partir das etiquetas
+    dos animais que ele já favoritou/manifestou interesse. Sem histórico,
+    retorna um valor neutro (uniforme nas categorias ordinais, 0.5 nas
+    booleanas) para não penalizar nem favorecer ninguém no cold start."""
+    p = np.zeros(DIMENSAO)
 
-    ad = _campos_adotantes(adotantes)
-    an = _campos_animais(animais)
+    if not historico_de_tags:
+        for categoria, tags in CATEGORIAS_PADRAO.items():
+            for tag in tags:
+                p[_INDICE_DA_TAG[tag]] = 1.0 / len(tags)
+        for tag in TAGS_BOOLEANAS:
+            p[_INDICE_DA_TAG[tag]] = 0.5
+        return p
 
-    score_porte = 1 - np.abs(ad["porte"] - an["porte"]) / 2
-    score_energia = 1 - np.abs(ad["energia"] - an["energia"]) / 2
-    score_criancas = np.where(ad["tem_criancas"] & ~an["convive_criancas"], 0.0, 1.0)
-    score_outros_pets = np.where(ad["tem_outros_pets"] & ~an["convive_outros_pets"], 0.0, 1.0)
-    score_espaco = np.where(ad["apartamento"] & an["precisa_quintal"], 0.3, 1.0)
-    score_experiencia = np.where(
-        an["necessita_experiencia"] & (ad["experiencia_anos"] < 1), 0.4, 1.0
-    )
+    n = len(historico_de_tags)
+    for categoria, tags in CATEGORIAS_PADRAO.items():
+        contagem = {tag: 0 for tag in tags}
+        algum_registro = 0
+        for tags_animal in historico_de_tags:
+            presentes = [t for t in tags_animal if t in contagem]
+            if presentes:
+                contagem[presentes[0]] += 1
+                algum_registro += 1
+        if algum_registro == 0:
+            for tag in tags:
+                p[_INDICE_DA_TAG[tag]] = 1.0 / len(tags)
+        else:
+            for tag in tags:
+                p[_INDICE_DA_TAG[tag]] = contagem[tag] / algum_registro
 
-    return (
-        PESOS["porte"] * score_porte
-        + PESOS["energia"] * score_energia
-        + PESOS["criancas"] * score_criancas
-        + PESOS["outros_pets"] * score_outros_pets
-        + PESOS["espaco"] * score_espaco
-        + PESOS["experiencia"] * score_experiencia
-    )
+    for tag in TAGS_BOOLEANAS:
+        idx = _INDICE_DA_TAG[tag]
+        presentes = sum(1 for tags_animal in historico_de_tags if tag in tags_animal)
+        p[idx] = presentes / n
 
-
-# ---------------------------------------------------------------------
-# Versão ingênua (Python puro) — só para benchmark comparativo
-# ---------------------------------------------------------------------
-
-def _score_par(adotante: dict, animal: dict) -> float:
-    porte_ad = _ORDEM_PORTE.get(adotante.get("preferencia_porte", "medio"), 1)
-    porte_an = _ORDEM_PORTE.get(animal.get("porte", "medio"), 1)
-    score_porte = 1 - abs(porte_ad - porte_an) / 2
-
-    energia_ad = _ORDEM_ENERGIA.get(adotante.get("energia_desejada", "medio"), 1)
-    energia_an = _ORDEM_ENERGIA.get(animal.get("nivel_energia", "medio"), 1)
-    score_energia = 1 - abs(energia_ad - energia_an) / 2
-
-    score_criancas = 0.0 if (adotante.get("tem_criancas") and not animal.get("convive_criancas")) else 1.0
-    score_outros_pets = 0.0 if (adotante.get("tem_outros_pets") and not animal.get("convive_outros_pets")) else 1.0
-    score_espaco = 0.3 if (adotante.get("tipo_moradia") == "apartamento" and animal.get("espaco_recomendado") == "casa_com_quintal") else 1.0
-    score_experiencia = 0.4 if (animal.get("necessidades_especiais") and adotante.get("experiencia_anos", 0) < 1) else 1.0
-
-    return (
-        PESOS["porte"] * score_porte
-        + PESOS["energia"] * score_energia
-        + PESOS["criancas"] * score_criancas
-        + PESOS["outros_pets"] * score_outros_pets
-        + PESOS["espaco"] * score_espaco
-        + PESOS["experiencia"] * score_experiencia
-    )
+    return p
 
 
-def calcular_matriz_scores_ingenua(adotantes: list[dict], animais: list[dict]) -> np.ndarray:
-    """Mesma conta que calcular_matriz_scores(), mas com loop Python
-    par a par — sem otimização nenhuma. Serve só de referência para o
-    benchmark, não deve ser usada pelo sistema."""
-    n, m = len(adotantes), len(animais)
-    matriz = np.zeros((n, m))
-    for i, ad in enumerate(adotantes):
-        for j, an in enumerate(animais):
-            matriz[i, j] = _score_par(ad, an)
-    return matriz
+def matriz_de_preferencias(historicos: List[List[List[str]]]) -> np.ndarray:
+    return np.array([vetor_de_preferencia(h) for h in historicos]) if historicos else np.zeros((0, DIMENSAO))
 
 
-# ---------------------------------------------------------------------
-# Versão paralela (multiprocessing) — para bases maiores
-# ---------------------------------------------------------------------
+# ------------------------------------------------------------- Cálculo do score
 
-def _calcular_bloco(args):
-    adotantes, bloco_animais = args
-    return calcular_matriz_scores(adotantes, bloco_animais)
+def calcular_matriz_scores_ingenua(P: np.ndarray, A: np.ndarray) -> np.ndarray:
+    """Versão de referência, sem vetorização: dois loops Python puros."""
+    n, m = P.shape[0], A.shape[0]
+    resultado = np.zeros((n, m))
+    for i in range(n):
+        for j in range(m):
+            score = 0.0
+            for idx in range(DIMENSAO):
+                if _PESO_ORDINAL[idx] > 0:
+                    score += _PESO_ORDINAL[idx] * P[i, idx] * A[j, idx]
+            for k, idx in enumerate(_INDICES_BOOL):
+                peso = _PESO_BOOL[k]
+                score += peso * (P[i, idx] * A[j, idx] + (1 - P[i, idx]) * (1 - A[j, idx]))
+            resultado[i, j] = score
+    return np.clip(resultado * 100, 0, 100)
 
 
-def calcular_matriz_scores_paralelo(
-    adotantes: list[dict], animais: list[dict], n_processos: Optional[int] = None
-) -> np.ndarray:
-    """Divide os animais em blocos e distribui entre processos
-    (multiprocessing), usando vários núcleos de CPU de verdade — não é
-    só truque de sintaxe do NumPy, são processos do sistema operacional
-    rodando ao mesmo tempo. Vale a pena a partir de bases grandes (ex:
-    uma rede de abrigos, não só uma ONG); para poucos animais o custo
-    de criar os processos é maior que o ganho."""
-    if not adotantes or not animais:
-        return np.zeros((len(adotantes), len(animais)))
+def calcular_matriz_scores(P: np.ndarray, A: np.ndarray) -> np.ndarray:
+    """Versão vetorizada com NumPy (produtos de matrizes em vez de loops)."""
+    if P.shape[0] == 0 or A.shape[0] == 0:
+        return np.zeros((P.shape[0], A.shape[0]))
 
-    n_processos = min(n_processos or mp.cpu_count(), len(animais)) or 1
-    blocos = [list(bloco) for bloco in np.array_split(animais, n_processos) if len(bloco) > 0]
-    tarefas = [(adotantes, bloco) for bloco in blocos]
+    P_ordinal = P * _PESO_ORDINAL  # pesos já embutidos por coluna
+    termo_ordinal = P_ordinal @ A.T  # (n, m)
 
-    with mp.Pool(processes=len(tarefas)) as pool:
-        resultados = pool.map(_calcular_bloco, tarefas)
+    P_bool = P[:, _INDICES_BOOL]
+    A_bool = A[:, _INDICES_BOOL]
+    const_i = ((1 - P_bool) * _PESO_BOOL).sum(axis=1)  # (n,)
+    coef = P_bool * (2 * _PESO_BOOL) - _PESO_BOOL  # equivalente a peso*(2P-1), (n, n_bool)
+    termo_booleano = const_i[:, None] + coef @ A_bool.T  # (n, m)
 
+    return np.clip((termo_ordinal + termo_booleano) * 100, 0, 100)
+
+
+def _bloco_paralelo(args):
+    P, A_bloco = args
+    return calcular_matriz_scores(P, A_bloco)
+
+
+def calcular_matriz_scores_paralelo(P: np.ndarray, A: np.ndarray, n_processos: Optional[int] = None) -> np.ndarray:
+    """Mesma conta, mas divide os animais em blocos e usa multiprocessing
+    para calcular cada bloco em um processo separado."""
+    if A.shape[0] == 0:
+        return np.zeros((P.shape[0], 0))
+    n_processos = n_processos or min(multiprocessing.cpu_count(), max(1, A.shape[0]))
+    blocos = np.array_split(A, n_processos) if n_processos > 1 else [A]
+    with multiprocessing.Pool(processes=len(blocos)) as pool:
+        resultados = pool.map(_bloco_paralelo, [(P, bloco) for bloco in blocos])
     return np.hstack(resultados)
 
 
-# ---------------------------------------------------------------------
-# Pareamento estável (Gale-Shapley) — a parte de otimização combinatória
-# ---------------------------------------------------------------------
+# ---------------------------------------------------------- Pareamento estável
 
-def gerar_pareamento_estavel(
-    ids_adotantes: list, ids_animais: list, matriz_scores: np.ndarray
-) -> dict:
-    """
-    Algoritmo de Gale-Shapley (casamento estável). Os adotantes
-    'propõem' aos animais em ordem decrescente do próprio score; cada
-    animal fica provisoriamente com quem tem o maior score entre os
-    que já propuseram, e solta quem tiver score pior se alguém melhor
-    aparecer depois. O resultado final é estável: não existe nenhuma
-    dupla adotante-animal fora do pareamento que prefeririam trocar
-    pra ficar junta.
+def gerar_pareamento_estavel(ids_adotantes: List[int], ids_animais: List[int], matriz_scores: np.ndarray) -> dict:
+    """Algoritmo de Gale-Shapley: adotantes propõem, do animal mais
+    compatível para o menos compatível, até que ninguém mais tenha
+    proposta pendente. Resultado é estável: não existe par (adotante,
+    animal) fora do pareamento que prefira mutuamente trocar de par."""
+    n, m = len(ids_adotantes), len(ids_animais)
+    ordem_preferencia = np.argsort(-matriz_scores, axis=1)  # (n, m), do melhor pro pior animal
+    proximo_a_propor = [0] * n
+    livre = list(range(n))
+    animal_atual_de = {}  # idx_animal -> idx_adotante
 
-    Retorna {id_adotante: id_animal}. Se houver mais adotantes que
-    animais, quem sobrar simplesmente não aparece no resultado (fica
-    na fila para quando outro animal ficar disponível).
-    """
-    n_adotantes = len(ids_adotantes)
-    n_animais = len(ids_animais)
-    if n_adotantes == 0 or n_animais == 0:
-        return {}
-
-    preferencias = [list(np.argsort(-matriz_scores[i])) for i in range(n_adotantes)]
-    proximo = [0] * n_adotantes
-
-    livres = list(range(n_adotantes))
-    animal_atual: dict[int, int] = {}   # index do animal -> index do adotante pareado com ele
-    par_do_adotante: dict[int, int] = {}
-
-    while livres:
-        i = livres.pop(0)
-        if proximo[i] >= n_animais:
-            continue  # já propôs pra todos os animais, fica sem par por ora
-
-        j = preferencias[i][proximo[i]]
-        proximo[i] += 1
-
-        if j not in animal_atual:
-            animal_atual[j] = i
-            par_do_adotante[i] = j
-        elif matriz_scores[i, j] > matriz_scores[animal_atual[j], j]:
-            k = animal_atual[j]
-            animal_atual[j] = i
-            par_do_adotante[i] = j
-            del par_do_adotante[k]
-            livres.append(k)
+    while livre:
+        i = livre.pop(0)
+        if proximo_a_propor[i] >= m:
+            continue
+        j = ordem_preferencia[i, proximo_a_propor[i]]
+        proximo_a_propor[i] += 1
+        if j not in animal_atual_de:
+            animal_atual_de[j] = i
         else:
-            livres.append(i)
+            atual = animal_atual_de[j]
+            if matriz_scores[i, j] > matriz_scores[atual, j]:
+                animal_atual_de[j] = i
+                livre.append(atual)
+            else:
+                livre.append(i)
 
-    return {ids_adotantes[i]: ids_animais[j] for i, j in par_do_adotante.items()}
+    return {
+        ids_adotantes[i]: ids_animais[j]
+        for j, i in animal_atual_de.items()
+    }

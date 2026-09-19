@@ -1,52 +1,53 @@
-// Cliente da API do backend PetCerto.
-//
-// Centraliza toda chamada HTTP ao backend (login, cadastro, animais),
-// guarda o token de sessão e trata erros de forma padronizada. Nenhuma
-// tela deve usar fetch() diretamente — sempre passar por aqui.
+// Cliente central de acesso à API do backend (Python, sem framework).
+// Todas as telas devem chamar as funções daqui, nunca fazer fetch direto,
+// para manter num único lugar a URL base, o token de autenticação e o
+// mapeamento entre os nomes de perfil usados no front e no back.
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-function getToken() {
-  return localStorage.getItem("petcerto_token");
+// O front usa "instituicao"/"administrador", que já é exatamente o que o
+// back manda agora (o back mudou para bater com o front nesta migração).
+const TOKEN_KEY = "petcerto_token";
+const USUARIO_KEY = "petcerto_usuario";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
 }
 
-function setToken(token) {
-  if (token) localStorage.setItem("petcerto_token", token);
-  else localStorage.removeItem("petcerto_token");
+export function getUsuario() {
+  const bruto = localStorage.getItem(USUARIO_KEY);
+  return bruto ? JSON.parse(bruto) : null;
 }
 
-function getUsuario() {
-  const raw = localStorage.getItem("petcerto_usuario");
-  return raw ? JSON.parse(raw) : null;
+function setSessao(token, usuario) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USUARIO_KEY, JSON.stringify(usuario));
 }
 
-function setUsuario(usuario) {
-  if (usuario) localStorage.setItem("petcerto_usuario", JSON.stringify(usuario));
-  else localStorage.removeItem("petcerto_usuario");
+export function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USUARIO_KEY);
 }
 
 async function chamarApi(caminho, { metodo = "GET", corpo, autenticado = true } = {}) {
-  const headers = { "Content-Type": "application/json" };
+  const cabecalhos = { "Content-Type": "application/json" };
   if (autenticado) {
     const token = getToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (token) cabecalhos["Authorization"] = `Bearer ${token}`;
   }
-
   const resposta = await fetch(`${API_BASE_URL}${caminho}`, {
     method: metodo,
-    headers,
-    body: corpo ? JSON.stringify(corpo) : undefined,
+    headers: cabecalhos,
+    body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
   });
-
   const dados = await resposta.json().catch(() => ({}));
-
   if (!resposta.ok) {
     throw new Error(dados.erro || `Erro ${resposta.status} ao chamar ${caminho}`);
   }
   return dados;
 }
 
-// ---------- autenticação ----------
+// ------------------------------------------------------------------- Auth
 
 export async function login(email, senha) {
   const dados = await chamarApi("/api/auth/login", {
@@ -54,89 +55,160 @@ export async function login(email, senha) {
     corpo: { email, senha },
     autenticado: false,
   });
-  setToken(dados.token);
-  setUsuario(dados.usuario);
+  setSessao(dados.token, dados.usuario);
   return dados.usuario;
 }
 
-export function logout() {
-  setToken(null);
-  setUsuario(null);
-}
-
-export function usuarioLogado() {
-  return getUsuario();
-}
-
-export function estaLogado() {
-  return Boolean(getToken());
-}
-
-// perfil do frontend -> perfil que o backend entende
-const PERFIL_FRONT_PARA_BACK = {
-  adotante: "adotante",
-  instituicao: "voluntario",
-  administrador: "admin", // backend não deixa se autocadastrar como admin (ver cadastrarUsuario)
-};
-
-export async function cadastrarUsuario({ nome, email, senha, perfil, instituicao_nome, instituicao_cidade }) {
+export async function cadastrarUsuario({ nome, email, senha, perfil, cpf, endereco, cnpj, localizacao, info_abrigo }) {
   return chamarApi("/api/usuarios", {
     metodo: "POST",
-    corpo: {
-      nome, email, senha,
-      perfil: PERFIL_FRONT_PARA_BACK[perfil] || "adotante",
-      instituicao_nome, instituicao_cidade,
-    },
+    corpo: { nome, email, senha, perfil, cpf, endereco, cnpj, localizacao, info_abrigo },
     autenticado: false,
   });
 }
 
-// ---------- animais ----------
+// ------------------------------------------------------------------ Tags
 
-// converte o formato do backend pro formato que as telas already esperam
+export async function listarTagsPadrao() {
+  const dados = await chamarApi("/api/tags", { autenticado: false });
+  return dados.tags;
+}
+
+// ---------------------------------------------------------------- Animais
+
 function animalDoBackendParaFrontend(a) {
-  const STATUS = { disponivel: "Disponível", em_processo: "Em processo", adotado: "Adotado" };
-  const ESPECIE = { cachorro: "Cão", gato: "Gato", outro: "Outro" };
-  const PORTE = { pequeno: "Porte pequeno", medio: "Porte médio", grande: "Porte grande" };
-
   return {
     id: a.id,
     name: a.nome,
-    species: ESPECIE[a.especie] || a.especie,
-    speciesTag: (ESPECIE[a.especie] || a.especie).toUpperCase(),
-    breed: a.raca || "SRD",
-    age: `${a.idade_anos} ${a.idade_anos === 1 ? "ano" : "anos"}`,
-    size: PORTE[a.porte] || a.porte,
-    status: STATUS[a.status] || a.status,
-    temperament: a.temperamento || "",
-    // campos que o backend ainda não tem — placeholder até existir Instituição/matching real
-    institution: "—",
-    city: "—",
-    compat: null,
-    _original: a, // guarda o objeto cru do backend, caso a tela precise
+    status: a.status, // 'Disponível' | 'Em Processo' | 'Adotado'
+    institution: a.nome_instituicao,
+    idInstituicao: a.id_instituicao,
+    dataNascimento: a.data_nascimento,
+    caracteristicas: a.caracteristicas,
+    compat: a.score_compatibilidade,
   };
 }
 
-export async function listarAnimais() {
-  const dados = await chamarApi("/api/animais");
-  return dados.animais.map(animalDoBackendParaFrontend);
+export async function listarAnimais(filtros = {}) {
+  const query = new URLSearchParams(filtros).toString();
+  const dados = await chamarApi(`/api/animais${query ? `?${query}` : ""}`, { autenticado: false });
+  return dados.map(animalDoBackendParaFrontend);
 }
 
 export async function buscarAnimal(id) {
-  const a = await chamarApi(`/api/animais/${id}`);
-  return animalDoBackendParaFrontend(a);
+  const dados = await chamarApi(`/api/animais/${id}`, { autenticado: false });
+  return animalDoBackendParaFrontend(dados);
 }
 
-export async function criarAnimal(animal) {
-  const a = await chamarApi("/api/animais", { metodo: "POST", corpo: animal });
-  return animalDoBackendParaFrontend(a);
+export async function criarAnimal({ nome, data_nascimento, caracteristicas, id_instituicao }) {
+  const dados = await chamarApi("/api/animais", {
+    metodo: "POST",
+    corpo: { nome, data_nascimento, caracteristicas, id_instituicao },
+  });
+  return animalDoBackendParaFrontend(dados);
 }
 
 export async function atualizarAnimal(id, campos) {
-  const a = await chamarApi(`/api/animais/${id}`, { metodo: "PUT", corpo: campos });
-  return animalDoBackendParaFrontend(a);
+  const dados = await chamarApi(`/api/animais/${id}`, { metodo: "PUT", corpo: campos });
+  return animalDoBackendParaFrontend(dados);
 }
 
 export async function excluirAnimal(id) {
   return chamarApi(`/api/animais/${id}`, { metodo: "DELETE" });
+}
+
+// -------------------------------------------------------- Favoritos / matching
+
+export async function favoritarAnimal(idAnimal) {
+  return chamarApi(`/api/animais/${idAnimal}/favoritar`, { metodo: "POST" });
+}
+
+export async function desfavoritarAnimal(idAnimal) {
+  return chamarApi(`/api/animais/${idAnimal}/favoritar`, { metodo: "DELETE" });
+}
+
+export async function listarFavoritos() {
+  return chamarApi("/api/favoritos");
+}
+
+export async function buscarCompatibilidade(idAnimal) {
+  return chamarApi(`/api/animais/${idAnimal}/compatibilidade`);
+}
+
+export async function listarRecomendacoes() {
+  const dados = await chamarApi("/api/recomendacoes");
+  return dados.map(animalDoBackendParaFrontend);
+}
+
+// --------------------------------------------------------- Fluxo de adoção
+
+export async function manifestarInteresse(idAnimal) {
+  return chamarApi("/api/manifestacoes", { metodo: "POST", corpo: { id_animal: idAnimal } });
+}
+
+export async function listarManifestacoes() {
+  return chamarApi("/api/manifestacoes");
+}
+
+export async function aprovarManifestacao(id) {
+  return chamarApi(`/api/manifestacoes/${id}/aprovar`, { metodo: "POST" });
+}
+
+export async function recusarManifestacao(id) {
+  return chamarApi(`/api/manifestacoes/${id}/recusar`, { metodo: "POST" });
+}
+
+export async function listarProcessos() {
+  return chamarApi("/api/processos");
+}
+
+export async function listarEtapas(idProcesso) {
+  return chamarApi(`/api/processos/${idProcesso}/etapas`);
+}
+
+export async function atualizarEtapa(idProcesso, idEtapa, status, observacao) {
+  return chamarApi(`/api/processos/${idProcesso}/etapas/${idEtapa}`, {
+    metodo: "PUT",
+    corpo: { status, observacao },
+  });
+}
+
+export async function listarHorariosDisponiveis(idInstituicao) {
+  return chamarApi(`/api/instituicoes/${idInstituicao}/horarios`);
+}
+
+export async function criarHorarioVisita(idInstituicao, dataHora) {
+  return chamarApi(`/api/instituicoes/${idInstituicao}/horarios`, {
+    metodo: "POST",
+    corpo: { data_hora: dataHora },
+  });
+}
+
+export async function agendarVisita(idProcesso, idHorario) {
+  return chamarApi(`/api/processos/${idProcesso}/visitas`, { metodo: "POST", corpo: { id_horario: idHorario } });
+}
+
+export async function enviarDocumento(idProcesso, nome, caminhoArquivo) {
+  return chamarApi(`/api/processos/${idProcesso}/documentos`, {
+    metodo: "POST",
+    corpo: { nome, caminho_arquivo: caminhoArquivo },
+  });
+}
+
+export async function listarHistoricoProcesso(idProcesso) {
+  return chamarApi(`/api/processos/${idProcesso}/historico`);
+}
+
+export async function concluirProcesso(idProcesso) {
+  return chamarApi(`/api/processos/${idProcesso}/concluir`, { metodo: "POST" });
+}
+
+export async function cancelarProcesso(idProcesso, motivo) {
+  return chamarApi(`/api/processos/${idProcesso}/cancelar`, { metodo: "POST", corpo: { motivo } });
+}
+
+// ---------------------------------------------------------------- Instituições
+
+export async function listarInstituicoes() {
+  return chamarApi("/api/instituicoes", { autenticado: false });
 }

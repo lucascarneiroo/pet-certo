@@ -1,80 +1,114 @@
 """
-Camada de acesso ao banco de dados (SQLite).
+Conexão com o PostgreSQL e inicialização do banco de dados.
 
-Centraliza a conexão e a inicialização do schema. Usar sempre
-`get_connection()` para obter uma conexão nova por operação.
+As credenciais NUNCA ficam escritas no código. Elas vêm de variáveis de
+ambiente (lidas de um arquivo .env que cada integrante mantém na própria
+máquina e que fica fora do Git). Isso evita expor a senha do banco no
+repositório e permite que cada um use suas próprias credenciais locais.
 
-Se a equipe decidir trocar de banco no futuro (PostgreSQL, MySQL...),
-esta é a única peça que precisa mudar de fato — todo o resto do
-backend (auth, crud, api) usa apenas as funções deste módulo e do
-animal_repository, sem SQL espalhado pelo código.
+Variáveis esperadas (ver .env.example):
+    PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 """
-
 import os
-import sqlite3
+from pathlib import Path
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "pet_certo.db")
-SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
+import psycopg2
+import psycopg2.extras
+
+BASE_DIR = Path(__file__).resolve().parent
+SCHEMA_PATH = BASE_DIR / "schema.sql"
 
 
-def get_connection() -> sqlite3.Connection:
-    """Retorna uma conexão com o banco, com row_factory para acessar
-    colunas pelo nome (ex: row["nome"])."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
+def _carregar_dotenv() -> None:
+    """Lê um arquivo .env simples (KEY=VALUE por linha) na raiz do backend,
+    se existir, sem exigir a biblioteca python-dotenv como dependência."""
+    env_path = BASE_DIR.parent / ".env"
+    if not env_path.exists():
+        return
+    for linha in env_path.read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        chave, valor = linha.split("=", 1)
+        chave = chave.strip()
+        valor = valor.strip().strip('"').strip("'")
+        os.environ.setdefault(chave, valor)
+
+
+_carregar_dotenv()
+
+
+def _config_conexao() -> dict:
+    return {
+        "host": os.environ.get("PGHOST", "localhost"),
+        "port": os.environ.get("PGPORT", "5432"),
+        "dbname": os.environ.get("PGDATABASE", "petcerto"),
+        "user": os.environ.get("PGUSER", "postgres"),
+        "password": os.environ.get("PGPASSWORD", ""),
+    }
+
+
+def get_connection():
+    """Retorna uma conexão nova com o PostgreSQL, com cursores em formato
+    de dicionário (RealDictCursor), equivalente ao sqlite3.Row usado antes."""
+    conn = psycopg2.connect(cursor_factory=psycopg2.extras.RealDictCursor, **_config_conexao())
     return conn
 
 
 def init_db() -> None:
-    """Cria as tabelas (se ainda não existirem), aplica migrações leves
-    em bancos já existentes de versões anteriores, e garante um usuário
-    administrador padrão para o primeiro acesso ao sistema."""
-    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
-        schema = f.read()
-
+    """Cria as tabelas (se ainda não existirem), popula as etiquetas padrão
+    de características e garante que exista um administrador padrão."""
     conn = get_connection()
     try:
-        conn.executescript(schema)
+        with conn.cursor() as cur:
+            with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+                cur.execute(f.read())
         conn.commit()
     finally:
         conn.close()
-
-    _migrar_schema()
+    _seed_caracteristicas_padrao()
     _seed_admin_padrao()
 
 
-def _coluna_existe(conn: sqlite3.Connection, tabela: str, coluna: str) -> bool:
-    colunas = conn.execute(f"PRAGMA table_info({tabela})").fetchall()
-    return any(c["name"] == coluna for c in colunas)
+def _seed_caracteristicas_padrao() -> None:
+    from database.tags_padrao import TODAS_AS_TAGS
 
-
-def _migrar_schema() -> None:
-    """Ajusta bancos criados por uma versão anterior do schema, que não
-    tinham a tabela `instituicoes` nem a coluna `usuarios.instituicao_id`.
-    `CREATE TABLE IF NOT EXISTS` não adiciona coluna em tabela que já
-    existe, por isso essa etapa é separada."""
     conn = get_connection()
     try:
-        if not _coluna_existe(conn, "usuarios", "instituicao_id"):
-            conn.execute("ALTER TABLE usuarios ADD COLUMN instituicao_id INTEGER REFERENCES instituicoes(id)")
-            conn.commit()
+        with conn.cursor() as cur:
+            for tag in TODAS_AS_TAGS:
+                cur.execute(
+                    "INSERT INTO CaracteristicaAnimal (nome) VALUES (%s) "
+                    "ON CONFLICT (nome) DO NOTHING",
+                    (tag,),
+                )
+        conn.commit()
     finally:
         conn.close()
 
 
 def _seed_admin_padrao() -> None:
-    """Garante que exista pelo menos um usuário admin para o primeiro
-    acesso. Evita cadastrar duplicado se já existir."""
-    from auth.auth_service import criar_usuario, buscar_usuario_por_email
+    """Garante que exista pelo menos um administrador para acessar o sistema
+    logo após clonar o projeto (login: admin@petcerto.com / senha: admin123)."""
+    from auth.auth_service import gerar_hash_senha
 
-    if buscar_usuario_por_email("admin@petcerto.com") is None:
-        criar_usuario(
-            nome="Administrador",
-            email="admin@petcerto.com",
-            senha="admin123",
-            perfil="admin",
-        )
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT idUsuario FROM Usuario WHERE login = %s", ("admin@petcerto.com",))
+            if cur.fetchone():
+                return
+            senha_hash, salt = gerar_hash_senha("admin123")
+            cur.execute(
+                "INSERT INTO Usuario (login, senha, nomeCompleto) VALUES (%s, %s, %s) "
+                "RETURNING idUsuario",
+                ("admin@petcerto.com", f"{salt}${senha_hash}", "Administrador Padrão"),
+            )
+            novo_id = cur.fetchone()["idusuario"]
+            cur.execute(
+                "INSERT INTO Administrador (idUsuario, permissoes, infoAdmin) VALUES (%s, %s, %s)",
+                (novo_id, "total", "Conta criada automaticamente na primeira inicialização."),
+            )
+        conn.commit()
+    finally:
+        conn.close()

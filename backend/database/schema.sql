@@ -1,76 +1,201 @@
--- Schema do banco de dados do PetCerto (backend)
---
--- Implementado em SQLite por simplicidade de desenvolvimento local.
--- Caso a equipe decida por outro SGBD (PostgreSQL, MySQL...), apenas
--- este arquivo e database/db.py precisam ser adaptados — o restante
--- do backend (auth, crud, api) não depende do banco escolhido.
+-- ===========================================================
+-- Banco de Dados Pet Certo (PostgreSQL)
+-- Schema oficial definido por Henrique (Banco de Dados e Documentação).
+-- Esta versão é usada exatamente como entregue pelo autor do modelo;
+-- o backend inteiro foi adaptado para funcionar em cima dela.
+-- ===========================================================
 
-CREATE TABLE IF NOT EXISTS instituicoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    cidade TEXT,
-    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('verificada', 'pendente', 'revisao')),
-    data_cadastro TEXT NOT NULL DEFAULT (datetime('now'))
+-- ---------------------------------------------------
+-- Tabela: Usuario (Tabela Pai / Base)
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS Usuario (
+    idUsuario SERIAL PRIMARY KEY,
+    login VARCHAR(255) NOT NULL UNIQUE,
+    senha VARCHAR(255) NOT NULL,
+    nomeCompleto VARCHAR(255) NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    senha_hash TEXT NOT NULL,
-    salt TEXT NOT NULL,
-    perfil TEXT NOT NULL CHECK (perfil IN ('admin', 'voluntario', 'adotante')),
-    instituicao_id INTEGER,               -- só preenchido para perfil = voluntario
-    data_cadastro TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (instituicao_id) REFERENCES instituicoes (id)
+-- ---------------------------------------------------
+-- Tabelas Filhas (Herança de Usuario)
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS Adotante (
+    idUsuario INT PRIMARY KEY,
+    cpf VARCHAR(14) NOT NULL UNIQUE,
+    endereco TEXT NOT NULL,
+    scorePerfil DECIMAL(5,2),
+    CONSTRAINT fk_adotante_usuario FOREIGN KEY (idUsuario)
+        REFERENCES Usuario (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS animais (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'outro')),
-    raca TEXT,
-    porte TEXT NOT NULL CHECK (porte IN ('pequeno', 'medio', 'grande')),
-    idade_anos REAL NOT NULL DEFAULT 0,
-    nivel_energia TEXT NOT NULL CHECK (nivel_energia IN ('baixo', 'medio', 'alto')),
-    temperamento TEXT,
-    convive_criancas INTEGER NOT NULL DEFAULT 0,      -- 0 = nao, 1 = sim
-    convive_outros_pets INTEGER NOT NULL DEFAULT 0,   -- 0 = nao, 1 = sim
-    necessidades_especiais TEXT,
-    espaco_recomendado TEXT NOT NULL CHECK (espaco_recomendado IN ('apartamento', 'casa_com_quintal', 'indiferente')),
-    status TEXT NOT NULL DEFAULT 'disponivel' CHECK (status IN ('disponivel', 'em_processo', 'adotado')),
-    data_cadastro TEXT NOT NULL DEFAULT (datetime('now')),
-    cadastrado_por INTEGER,
-    FOREIGN KEY (cadastrado_por) REFERENCES usuarios (id)
+CREATE TABLE IF NOT EXISTS Instituicao (
+    idUsuario INT PRIMARY KEY,
+    cnpj VARCHAR(18) NOT NULL UNIQUE,
+    localizacao TEXT NOT NULL,
+    infoAbrigo TEXT,
+    CONSTRAINT fk_instituicao_usuario FOREIGN KEY (idUsuario)
+        REFERENCES Usuario (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Fluxo de adoção: cada linha é o pedido de UM adotante por UM animal.
--- "etapa" acompanha o processo (Interesse -> ... -> Conclusão, conforme
--- as telas do frontend); "status" indica se está andando, foi aprovado,
--- recusado ou cancelado.
-CREATE TABLE IF NOT EXISTS solicitacoes_adocao (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    animal_id INTEGER NOT NULL,
-    adotante_id INTEGER NOT NULL,
-    etapa TEXT NOT NULL DEFAULT 'interesse'
-        CHECK (etapa IN ('interesse', 'analise', 'visita', 'documentos', 'aprovacao', 'concluida')),
-    status TEXT NOT NULL DEFAULT 'em_andamento'
-        CHECK (status IN ('em_andamento', 'aprovada', 'recusada', 'cancelada')),
-    observacoes TEXT,
-    data_solicitacao TEXT NOT NULL DEFAULT (datetime('now')),
-    data_atualizacao TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (animal_id) REFERENCES animais (id),
-    FOREIGN KEY (adotante_id) REFERENCES usuarios (id)
+CREATE TABLE IF NOT EXISTS Administrador (
+    idUsuario INT PRIMARY KEY,
+    permissoes TEXT,
+    infoAdmin TEXT,
+    CONSTRAINT fk_administrador_usuario FOREIGN KEY (idUsuario)
+        REFERENCES Usuario (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Visita agendada como parte de uma solicitação de adoção específica.
-CREATE TABLE IF NOT EXISTS visitas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    solicitacao_id INTEGER NOT NULL,
-    data_agendada TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'agendada'
-        CHECK (status IN ('agendada', 'realizada', 'cancelada', 'reagendada')),
-    observacoes TEXT,
-    data_cadastro TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (solicitacao_id) REFERENCES solicitacoes_adocao (id)
+-- ---------------------------------------------------
+-- Tabela: RegistroAdministrativo
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS RegistroAdministrativo (
+    idRegistroAdmin SERIAL PRIMARY KEY,
+    idAdministrador INT NOT NULL,
+    tipoAtividade VARCHAR(100) NOT NULL,
+    dataHora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    descricao TEXT,
+    CONSTRAINT fk_registro_admin FOREIGN KEY (idAdministrador)
+        REFERENCES Administrador (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- ---------------------------------------------------
+-- Gestão de Animais e Características
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS Animal (
+    idAnimal SERIAL PRIMARY KEY,
+    idInstituicao INT NOT NULL,
+    nome VARCHAR(255) NOT NULL,
+    dataNascimento DATE,
+    status VARCHAR(50) NOT NULL DEFAULT 'Disponível',
+    CONSTRAINT fk_animal_instituicao FOREIGN KEY (idInstituicao)
+        REFERENCES Instituicao (idUsuario) ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS CaracteristicaAnimal (
+    idCaracteristica SERIAL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL UNIQUE
+);
+
+-- Tabela Associativa (Muitos para Muitos entre Animal e Característica)
+CREATE TABLE IF NOT EXISTS AnimalCaracteristica (
+    idAnimal INT NOT NULL,
+    idCaracteristica INT NOT NULL,
+    PRIMARY KEY (idAnimal, idCaracteristica),
+    CONSTRAINT fk_ac_animal FOREIGN KEY (idAnimal)
+        REFERENCES Animal (idAnimal) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ac_caracteristica FOREIGN KEY (idCaracteristica)
+        REFERENCES CaracteristicaAnimal (idCaracteristica) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- ---------------------------------------------------
+-- Interações e Análises
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS Favorito (
+    idFavorito SERIAL PRIMARY KEY,
+    idAdotante INT NOT NULL,
+    idAnimal INT NOT NULL,
+    dataFavorito TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_favorito_adotante_animal UNIQUE (idAdotante, idAnimal),
+    CONSTRAINT fk_favorito_adotante FOREIGN KEY (idAdotante)
+        REFERENCES Adotante (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_favorito_animal FOREIGN KEY (idAnimal)
+        REFERENCES Animal (idAnimal) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Recomendacao (
+    idRecomendacao SERIAL PRIMARY KEY,
+    idAdotante INT NOT NULL,
+    idAnimal INT NOT NULL,
+    dataGerada TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_recomendacao_adotante FOREIGN KEY (idAdotante)
+        REFERENCES Adotante (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_recomendacao_animal FOREIGN KEY (idAnimal)
+        REFERENCES Animal (idAnimal) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Compatibilidade (
+    idCompatibilidade SERIAL PRIMARY KEY,
+    idAdotante INT NOT NULL,
+    idAnimal INT NOT NULL,
+    score INT CHECK (score BETWEEN 0 AND 100),
+    fatores JSONB, -- Suporte a dados estruturados no Postgres
+    CONSTRAINT fk_compatibilidade_adotante FOREIGN KEY (idAdotante)
+        REFERENCES Adotante (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_compatibilidade_animal FOREIGN KEY (idAnimal)
+        REFERENCES Animal (idAnimal) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- ---------------------------------------------------
+-- Fluxo do Processo de Adoção
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS ManifestacaoInteresse (
+    idManifestacao SERIAL PRIMARY KEY,
+    idAdotante INT NOT NULL,
+    idAnimal INT NOT NULL,
+    dataManifestacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(50) NOT NULL DEFAULT 'Pendente',
+    CONSTRAINT fk_manifestacao_adotante FOREIGN KEY (idAdotante)
+        REFERENCES Adotante (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_manifestacao_animal FOREIGN KEY (idAnimal)
+        REFERENCES Animal (idAnimal) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ProcessoAdocao (
+    idProcesso SERIAL PRIMARY KEY,
+    idManifestacao INT NOT NULL UNIQUE,
+    status VARCHAR(50) NOT NULL DEFAULT 'Em Andamento',
+    CONSTRAINT fk_processo_manifestacao FOREIGN KEY (idManifestacao)
+        REFERENCES ManifestacaoInteresse (idManifestacao) ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS EtapaAdocao (
+    idEtapa SERIAL PRIMARY KEY,
+    idProcesso INT NOT NULL,
+    nome VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    dataInicio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    dataFim TIMESTAMP,
+    CONSTRAINT fk_etapa_processo FOREIGN KEY (idProcesso)
+        REFERENCES ProcessoAdocao (idProcesso) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS HorarioVisita (
+    idHorario SERIAL PRIMARY KEY,
+    idInstituicao INT NOT NULL,
+    dataHora TIMESTAMP NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'Disponível',
+    CONSTRAINT fk_horario_instituicao FOREIGN KEY (idInstituicao)
+        REFERENCES Instituicao (idUsuario) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Visita (
+    idVisita SERIAL PRIMARY KEY,
+    idProcesso INT NOT NULL,
+    idHorario INT UNIQUE,
+    dataVisita TIMESTAMP NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'Agendada',
+    resultado TEXT,
+    CONSTRAINT fk_visita_processo FOREIGN KEY (idProcesso)
+        REFERENCES ProcessoAdocao (idProcesso) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_visita_horario FOREIGN KEY (idHorario)
+        REFERENCES HorarioVisita (idHorario) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Documento (
+    idDocumento SERIAL PRIMARY KEY,
+    idProcesso INT NOT NULL,
+    nome VARCHAR(255) NOT NULL,
+    caminhoArquivo VARCHAR(255) NOT NULL,
+    dataEnvio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_documento_processo FOREIGN KEY (idProcesso)
+        REFERENCES ProcessoAdocao (idProcesso) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS HistoricoProcesso (
+    idHistorico SERIAL PRIMARY KEY,
+    idProcesso INT NOT NULL,
+    dataHora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    acao VARCHAR(255) NOT NULL,
+    mudanca TEXT,
+    CONSTRAINT fk_historico_processo FOREIGN KEY (idProcesso)
+        REFERENCES ProcessoAdocao (idProcesso) ON DELETE CASCADE ON UPDATE CASCADE
 );

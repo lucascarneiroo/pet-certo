@@ -1,4 +1,2 @@
-# API/CRUD/autenticação usam só biblioteca padrão do Python (sqlite3,
-# http.server, hashlib, json). O algoritmo de compatibilidade
-# (matching/) usa NumPy para vetorização:
+psycopg2-binary
 numpy

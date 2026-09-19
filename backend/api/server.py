@@ -1,157 +1,173 @@
-"""
-Servidor HTTP do backend do PetCerto.
-
-Implementado com a biblioteca padrão do Python (módulo http.server),
-sem frameworks externos (Flask, FastAPI, Django etc.) — em linha com
-a decisão da disciplina de priorizar Python "puro" no núcleo do
-projeto.
-
-Expõe uma API REST em JSON que pode ser consumida por qualquer
-frontend que a equipe decidir usar (web, mobile, desktop), rodando em
-outra tecnologia e até em outro processo/computador — é justamente
-essa separação que caracteriza "backend" nesse projeto.
-
-Ver docs/api.md (na raiz do repositório) para a lista completa de
-rotas com exemplos de request/response.
-"""
-
+"""Servidor HTTP do backend do Pet Certo, usando só a biblioteca padrão do
+Python (http.server) — sem Flask/Django, por exigência do curso para o
+núcleo computacional. CORS liberado manualmente para o frontend em React
+poder chamar a API de outra origem durante o desenvolvimento local."""
 import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
-from database.db import init_db, get_connection
+from auth.auth_service import (
+    CredenciaisInvalidasError,
+    DadosInvalidosError,
+    EmailJaCadastradoError,
+    autenticar,
+    buscar_usuario_por_email,
+    buscar_usuario_por_id,
+    criar_usuario,
+    listar_instituicoes,
+)
+from auth.session_service import criar_sessao, encerrar_sessao, usuario_id_da_sessao
+from database.adocao_repository import (
+    FluxoDeAdocaoInvalidoError,
+    agendar_visita,
+    aprovar_manifestacao,
+    atualizar_visita,
+    cancelar_processo,
+    concluir_processo,
+    criar_horario_visita,
+    criar_manifestacao,
+    enviar_documento,
+    listar_documentos,
+    listar_etapas,
+    listar_historico,
+    listar_horarios_disponiveis,
+    listar_manifestacoes,
+    listar_processos,
+    listar_visitas_do_processo,
+    recusar_manifestacao,
+    avancar_etapa,
+)
 from database.animal_repository import (
-    listar_animais,
+    DadosDoAnimalInvalidosError,
+    atualizar_animal,
     buscar_animal_por_id,
     criar_animal,
-    atualizar_animal,
     excluir_animal,
-    DadosDoAnimalInvalidosError,
+    listar_animais,
 )
-from database.instituicao_repository import (
-    listar_instituicoes,
-    buscar_instituicao_por_id,
-    criar_instituicao,
-    atualizar_instituicao,
-    DadosDaInstituicaoInvalidosError,
+from database.interacoes_repository import (
+    desfavoritar,
+    favoritar,
+    listar_favoritos,
+    listar_recomendacoes,
+    registrar_acao_admin,
+    registrar_recomendacao,
+    salvar_compatibilidade,
 )
-from database.solicitacao_repository import (
-    criar_solicitacao,
-    buscar_solicitacao_por_id,
-    listar_solicitacoes_do_adotante,
-    listar_solicitacoes_da_instituicao,
-    listar_todas_solicitacoes,
-    avancar_etapa,
-    atualizar_status as atualizar_status_solicitacao,
-    SolicitacaoInvalidaError,
-)
-from database.visita_repository import (
-    agendar_visita,
-    listar_visitas_da_solicitacao,
-    atualizar_visita,
-    VisitaInvalidaError,
-)
-from auth.auth_service import (
-    autenticar,
-    criar_usuario,
-    listar_usuarios,
-    buscar_usuario_por_id,
-    CredenciaisInvalidasError,
-    EmailJaCadastradoError,
-    DadosInvalidosError,
-)
-from auth.session_service import criar_sessao, usuario_da_sessao
-
+from database.tags_padrao import TODAS_AS_TAGS
+from matching.compatibilidade import calcular_matriz_scores, vetor_de_preferencia, vetor_do_animal
 
 ROTA_ANIMAL_COM_ID = re.compile(r"^/api/animais/(\d+)$")
-ROTA_INSTITUICAO_COM_ID = re.compile(r"^/api/instituicoes/(\d+)$")
-ROTA_SOLICITACAO_COM_ID = re.compile(r"^/api/solicitacoes/(\d+)$")
-ROTA_SOLICITACAO_VISITAS = re.compile(r"^/api/solicitacoes/(\d+)/visitas$")
+ROTA_ANIMAL_FAVORITAR = re.compile(r"^/api/animais/(\d+)/favoritar$")
+ROTA_ANIMAL_COMPATIBILIDADE = re.compile(r"^/api/animais/(\d+)/compatibilidade$")
+ROTA_MANIFESTACAO_COM_ID = re.compile(r"^/api/manifestacoes/(\d+)$")
+ROTA_MANIFESTACAO_APROVAR = re.compile(r"^/api/manifestacoes/(\d+)/aprovar$")
+ROTA_MANIFESTACAO_RECUSAR = re.compile(r"^/api/manifestacoes/(\d+)/recusar$")
+ROTA_PROCESSO_COM_ID = re.compile(r"^/api/processos/(\d+)$")
+ROTA_PROCESSO_ETAPAS = re.compile(r"^/api/processos/(\d+)/etapas$")
+ROTA_PROCESSO_ETAPA_COM_ID = re.compile(r"^/api/processos/(\d+)/etapas/(\d+)$")
+ROTA_PROCESSO_VISITAS = re.compile(r"^/api/processos/(\d+)/visitas$")
+ROTA_PROCESSO_DOCUMENTOS = re.compile(r"^/api/processos/(\d+)/documentos$")
+ROTA_PROCESSO_HISTORICO = re.compile(r"^/api/processos/(\d+)/historico$")
+ROTA_PROCESSO_CONCLUIR = re.compile(r"^/api/processos/(\d+)/concluir$")
+ROTA_PROCESSO_CANCELAR = re.compile(r"^/api/processos/(\d+)/cancelar$")
 ROTA_VISITA_COM_ID = re.compile(r"^/api/visitas/(\d+)$")
+ROTA_HORARIOS_DA_INSTITUICAO = re.compile(r"^/api/instituicoes/(\d+)/horarios$")
 
 
 class ErroHTTP(Exception):
-    """Erro de negócio/validação que deve virar uma resposta HTTP
-    com status e mensagem específicos (em vez de um 500 genérico)."""
-
     def __init__(self, status: int, mensagem: str):
         super().__init__(mensagem)
         self.status = status
         self.mensagem = mensagem
 
 
+def _animal_para_json(animal) -> dict:
+    return {
+        "id": animal.id,
+        "id_instituicao": animal.id_instituicao,
+        "nome_instituicao": animal.nome_instituicao,
+        "nome": animal.nome,
+        "data_nascimento": animal.data_nascimento,
+        "status": animal.status,
+        "caracteristicas": animal.caracteristicas,
+    }
+
+
+def _usuario_para_json(usuario) -> dict:
+    dado = {"id": usuario.id, "nome": usuario.nome, "email": usuario.email, "perfil": usuario.perfil}
+    if usuario.perfil == "adotante":
+        dado.update({"cpf": usuario.cpf, "endereco": usuario.endereco, "score_perfil": usuario.score_perfil})
+    elif usuario.perfil == "instituicao":
+        dado.update({"cnpj": usuario.cnpj, "localizacao": usuario.localizacao, "info_abrigo": usuario.info_abrigo})
+    return dado
+
+
 class PetCertoHandler(BaseHTTPRequestHandler):
+    server_version = "PetCertoAPI/2.0"
 
-    # ---------- infraestrutura de request/response ----------
+    # ------------------------------------------------------------ utilitários
 
-    def _enviar_json(self, status: int, payload: dict):
-        corpo = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+    def _enviar_json(self, status: int, corpo: dict) -> None:
+        dados = json.dumps(corpo, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(dados)))
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
-        self.wfile.write(corpo)
+        self.wfile.write(dados)
 
     def _ler_corpo_json(self) -> dict:
-        tamanho = int(self.headers.get("Content-Length", 0) or 0)
+        tamanho = int(self.headers.get("Content-Length", 0))
         if tamanho == 0:
             return {}
         bruto = self.rfile.read(tamanho)
         try:
-            return json.loads(bruto.decode("utf-8")) if bruto else {}
+            return json.loads(bruto.decode("utf-8"))
         except json.JSONDecodeError:
             raise ErroHTTP(400, "Corpo da requisição não é um JSON válido.")
 
     def _usuario_autenticado(self):
-        header = self.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            raise ErroHTTP(
-                401,
-                "Token de autenticação ausente. Envie o cabeçalho "
-                "'Authorization: Bearer <token>' obtido no login.",
-            )
-        token = header[len("Bearer "):].strip()
-        usuario = usuario_da_sessao(token)
-        if usuario is None:
+        cabecalho = self.headers.get("Authorization", "")
+        if not cabecalho.startswith("Bearer "):
+            raise ErroHTTP(401, "Token de autenticação ausente.")
+        token = cabecalho[len("Bearer "):]
+        usuario_id = usuario_id_da_sessao(token)
+        if usuario_id is None:
             raise ErroHTTP(401, "Sessão inválida ou expirada. Faça login novamente.")
+        usuario = buscar_usuario_por_id(usuario_id)
+        if usuario is None:
+            raise ErroHTTP(401, "Usuário não encontrado.")
         return usuario
 
-    def _exigir_perfil(self, usuario, perfis_permitidos):
-        if usuario.perfil not in perfis_permitidos:
-            raise ErroHTTP(
-                403, f"Seu perfil ('{usuario.perfil}') não tem permissão para essa ação."
-            )
+    def _exigir_admin(self, usuario) -> None:
+        if not usuario.eh_admin:
+            raise ErroHTTP(403, "Apenas administradores podem realizar esta ação.")
 
-    def _exigir_dono_da_instituicao_ou_admin(self, usuario, instituicao_id):
+    def _exigir_instituicao_ou_admin(self, usuario) -> None:
+        if not (usuario.eh_admin or usuario.eh_instituicao):
+            raise ErroHTTP(403, "Apenas administradores e instituições podem realizar esta ação.")
+
+    def _exigir_dono_do_animal_ou_admin(self, usuario, animal) -> None:
         if usuario.eh_admin:
             return
-        if not (usuario.eh_voluntario and usuario.instituicao_id == instituicao_id):
-            raise ErroHTTP(403, "Você não tem permissão para gerenciar esta instituição.")
+        if usuario.eh_instituicao and animal.id_instituicao == usuario.id:
+            return
+        raise ErroHTTP(403, "Este animal pertence a outra instituição.")
 
-    def _exigir_pode_gerenciar_solicitacao(self, usuario, solicitacao):
-        """Admin pode tudo. Voluntário só pode mexer em solicitações de
-        animais cadastrados por alguém da mesma instituição que ele."""
+    def _exigir_dono_do_processo_ou_admin(self, usuario, processo_id: int) -> None:
         if usuario.eh_admin:
             return
-        if not usuario.eh_voluntario:
-            raise ErroHTTP(403, "Apenas administradores e instituições podem gerenciar solicitações.")
-        animal = buscar_animal_por_id(solicitacao.animal_id)
-        dono_do_animal = buscar_usuario_por_id(animal.cadastrado_por) if animal and animal.cadastrado_por else None
-        mesma_instituicao = (
-            dono_do_animal is not None
-            and dono_do_animal.instituicao_id is not None
-            and dono_do_animal.instituicao_id == usuario.instituicao_id
-        )
-        if not mesma_instituicao:
-            raise ErroHTTP(403, "Esta solicitação pertence a outra instituição.")
+        if usuario.eh_instituicao:
+            pertence = any(p["id"] == processo_id for p in listar_processos(id_instituicao=usuario.id))
+            if pertence:
+                return
+        raise ErroHTTP(403, "Este processo de adoção pertence a outra instituição.")
 
-    def log_message(self, format, *args):
-        # log mais enxuto no console: método, caminho e status da resposta
-        print(f"[api] {self.address_string()} - {format % args}")
-
-    # ---------- CORS (necessário para o frontend, rodando em outra origem, poder chamar a API) ----------
+    # --------------------------------------------------------------- roteamento
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -160,424 +176,420 @@ class PetCertoHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
-    # ---------- roteamento ----------
-
     def do_GET(self):
-        self._rotear("GET")
+        self._despachar("GET")
 
     def do_POST(self):
-        self._rotear("POST")
+        self._despachar("POST")
 
     def do_PUT(self):
-        self._rotear("PUT")
+        self._despachar("PUT")
 
     def do_DELETE(self):
-        self._rotear("DELETE")
+        self._despachar("DELETE")
 
-    def _rotear(self, metodo):
-        caminho = urlparse(self.path).path
+    def _despachar(self, metodo: str) -> None:
+        caminho_completo = urlparse(self.path)
+        caminho = caminho_completo.path
+        query = parse_qs(caminho_completo.query)
         try:
-            status, corpo = self._despachar(metodo, caminho)
+            resultado = self._rotear(metodo, caminho, query)
+            status, corpo = resultado if isinstance(resultado, tuple) else (200, resultado)
             self._enviar_json(status, corpo)
-        except ErroHTTP as e:
-            self._enviar_json(e.status, {"erro": e.mensagem})
-        except Exception as e:  # nunca deixar a exceção crua vazar pro cliente
-            self._enviar_json(500, {"erro": f"Erro interno no servidor: {e}"})
+        except ErroHTTP as erro:
+            self._enviar_json(erro.status, {"erro": erro.mensagem})
+        except (DadosInvalidosError, DadosDoAnimalInvalidosError, FluxoDeAdocaoInvalidoError) as erro:
+            self._enviar_json(400, {"erro": str(erro)})
+        except EmailJaCadastradoError as erro:
+            self._enviar_json(409, {"erro": str(erro)})
+        except CredenciaisInvalidasError as erro:
+            self._enviar_json(401, {"erro": str(erro)})
+        except Exception as erro:  # nunca deixar o servidor cair por um erro inesperado
+            self._enviar_json(500, {"erro": f"Erro interno: {erro}"})
 
-    def _despachar(self, metodo, caminho):
-        if caminho == "/api/health" and metodo == "GET":
-            return self._health()
+    def log_message(self, format, *args):
+        print(f"[api] {self.address_string()} - {format % args}")
+
+    # ------------------------------------------------------------------ rotas
+
+    def _rotear(self, metodo: str, caminho: str, query: dict):
+        if caminho == "/api/health":
+            return {"status": "ok", "servico": "Pet Certo API"}
 
         if caminho == "/api/auth/login" and metodo == "POST":
             return self._login()
-
         if caminho == "/api/auth/me" and metodo == "GET":
-            return self._me()
+            return _usuario_para_json(self._usuario_autenticado())
+        if caminho == "/api/auth/logout" and metodo == "POST":
+            return self._logout()
 
         if caminho == "/api/usuarios" and metodo == "POST":
             return self._cadastrar_usuario()
 
-        if caminho == "/api/usuarios" and metodo == "GET":
-            return self._listar_usuarios()
+        if caminho == "/api/instituicoes" and metodo == "GET":
+            return listar_instituicoes()
+
+        if caminho == "/api/tags" and metodo == "GET":
+            return {"tags": TODAS_AS_TAGS}
 
         if caminho == "/api/animais" and metodo == "GET":
-            return self._listar_animais()
-
+            return self._listar_animais(query)
         if caminho == "/api/animais" and metodo == "POST":
             return self._criar_animal()
 
         m = ROTA_ANIMAL_COM_ID.match(caminho)
+        if m:
+            animal_id = int(m.group(1))
+            if metodo == "GET":
+                return self._buscar_animal(animal_id)
+            if metodo == "PUT":
+                return self._atualizar_animal(animal_id)
+            if metodo == "DELETE":
+                return self._excluir_animal(animal_id)
+
+        m = ROTA_ANIMAL_FAVORITAR.match(caminho)
+        if m:
+            animal_id = int(m.group(1))
+            if metodo == "POST":
+                return self._favoritar(animal_id)
+            if metodo == "DELETE":
+                return self._desfavoritar(animal_id)
+
+        m = ROTA_ANIMAL_COMPATIBILIDADE.match(caminho)
         if m and metodo == "GET":
-            return self._buscar_animal(int(m.group(1)))
-        if m and metodo == "PUT":
-            return self._atualizar_animal(int(m.group(1)))
-        if m and metodo == "DELETE":
-            return self._excluir_animal(int(m.group(1)))
+            return self._compatibilidade(int(m.group(1)))
 
-        if caminho == "/api/instituicoes" and metodo == "GET":
-            return self._listar_instituicoes()
-        if caminho == "/api/instituicoes" and metodo == "POST":
-            return self._criar_instituicao()
+        if caminho == "/api/favoritos" and metodo == "GET":
+            return self._listar_favoritos()
+        if caminho == "/api/recomendacoes" and metodo == "GET":
+            return self._listar_recomendacoes()
 
-        m = ROTA_INSTITUICAO_COM_ID.match(caminho)
-        if m and metodo == "GET":
-            return self._buscar_instituicao(int(m.group(1)))
-        if m and metodo == "PUT":
-            return self._atualizar_instituicao(int(m.group(1)))
+        if caminho == "/api/manifestacoes" and metodo == "GET":
+            return self._listar_manifestacoes(query)
+        if caminho == "/api/manifestacoes" and metodo == "POST":
+            return self._criar_manifestacao()
 
-        if caminho == "/api/solicitacoes" and metodo == "GET":
-            return self._listar_solicitacoes()
-        if caminho == "/api/solicitacoes" and metodo == "POST":
-            return self._criar_solicitacao()
-
-        m = ROTA_SOLICITACAO_COM_ID.match(caminho)
-        if m and metodo == "GET":
-            return self._buscar_solicitacao(int(m.group(1)))
-        if m and metodo == "PUT":
-            return self._atualizar_solicitacao(int(m.group(1)))
-
-        m = ROTA_SOLICITACAO_VISITAS.match(caminho)
-        if m and metodo == "GET":
-            return self._listar_visitas(int(m.group(1)))
+        m = ROTA_MANIFESTACAO_APROVAR.match(caminho)
         if m and metodo == "POST":
-            return self._agendar_visita(int(m.group(1)))
+            return self._aprovar_manifestacao(int(m.group(1)))
+        m = ROTA_MANIFESTACAO_RECUSAR.match(caminho)
+        if m and metodo == "POST":
+            return self._recusar_manifestacao(int(m.group(1)))
+
+        if caminho == "/api/processos" and metodo == "GET":
+            return self._listar_processos(query)
+
+        m = ROTA_PROCESSO_ETAPAS.match(caminho)
+        if m and metodo == "GET":
+            return self._listar_etapas(int(m.group(1)))
+        m = ROTA_PROCESSO_ETAPA_COM_ID.match(caminho)
+        if m and metodo == "PUT":
+            return self._atualizar_etapa(int(m.group(1)), int(m.group(2)))
+
+        m = ROTA_PROCESSO_VISITAS.match(caminho)
+        if m:
+            processo_id = int(m.group(1))
+            if metodo == "GET":
+                return self._listar_visitas(processo_id)
+            if metodo == "POST":
+                return self._agendar_visita(processo_id)
+
+        m = ROTA_PROCESSO_DOCUMENTOS.match(caminho)
+        if m:
+            processo_id = int(m.group(1))
+            if metodo == "GET":
+                return self._listar_documentos(processo_id)
+            if metodo == "POST":
+                return self._enviar_documento(processo_id)
+
+        m = ROTA_PROCESSO_HISTORICO.match(caminho)
+        if m and metodo == "GET":
+            return self._listar_historico(int(m.group(1)))
+
+        m = ROTA_PROCESSO_CONCLUIR.match(caminho)
+        if m and metodo == "POST":
+            return self._concluir_processo(int(m.group(1)))
+        m = ROTA_PROCESSO_CANCELAR.match(caminho)
+        if m and metodo == "POST":
+            return self._cancelar_processo(int(m.group(1)))
 
         m = ROTA_VISITA_COM_ID.match(caminho)
         if m and metodo == "PUT":
             return self._atualizar_visita(int(m.group(1)))
 
-        raise ErroHTTP(404, f"Rota não encontrada: {metodo} {caminho}")
+        m = ROTA_HORARIOS_DA_INSTITUICAO.match(caminho)
+        if m:
+            instituicao_id = int(m.group(1))
+            if metodo == "GET":
+                return self._listar_horarios(instituicao_id)
+            if metodo == "POST":
+                return self._criar_horario(instituicao_id)
 
-    # ---------- handlers: saúde / autenticação ----------
+        raise ErroHTTP(404, "Rota não encontrada.")
 
-    def _health(self):
-        """Usado para comprovar 'banco de dados conectado' (item da sprint)."""
-        try:
-            conn = get_connection()
-            conn.execute("SELECT 1")
-            conn.close()
-            return 200, {"status": "ok", "banco_de_dados": "conectado"}
-        except Exception as e:
-            return 500, {"status": "erro", "detalhe": str(e)}
+    # ---------------------------------------------------------------- auth
 
     def _login(self):
-        dados = self._ler_corpo_json()
-        try:
-            usuario = autenticar(dados.get("email", ""), dados.get("senha", ""))
-        except CredenciaisInvalidasError as e:
-            raise ErroHTTP(401, str(e))
+        corpo = self._ler_corpo_json()
+        usuario = autenticar(corpo.get("email", ""), corpo.get("senha", ""))
         token = criar_sessao(usuario.id)
-        return 200, {
-            "token": token,
-            "usuario": _usuario_para_dict(usuario),
-        }
+        return {"token": token, "usuario": _usuario_para_json(usuario)}
 
-    def _me(self):
-        usuario = self._usuario_autenticado()
-        return 200, _usuario_para_dict(usuario)
-
-    # ---------- handlers: usuários ----------
+    def _logout(self):
+        cabecalho = self.headers.get("Authorization", "")
+        if cabecalho.startswith("Bearer "):
+            encerrar_sessao(cabecalho[len("Bearer "):])
+        return {"ok": True}
 
     def _cadastrar_usuario(self):
-        dados = self._ler_corpo_json()
-        try:
-            usuario = criar_usuario(
-                nome=dados.get("nome", ""),
-                email=dados.get("email", ""),
-                senha=dados.get("senha", ""),
-                perfil=dados.get("perfil", "adotante"),
-                instituicao_nome=dados.get("instituicao_nome"),
-                instituicao_cidade=dados.get("instituicao_cidade"),
-            )
-        except (EmailJaCadastradoError, DadosInvalidosError, DadosDaInstituicaoInvalidosError) as e:
-            raise ErroHTTP(400, str(e))
-        return 201, _usuario_para_dict(usuario)
+        corpo = self._ler_corpo_json()
+        usuario = criar_usuario(
+            nome=corpo.get("nome", ""),
+            email=corpo.get("email", ""),
+            senha=corpo.get("senha", ""),
+            perfil=corpo.get("perfil", ""),
+            cpf=corpo.get("cpf"),
+            endereco=corpo.get("endereco"),
+            cnpj=corpo.get("cnpj"),
+            localizacao=corpo.get("localizacao"),
+            info_abrigo=corpo.get("info_abrigo"),
+        )
+        return 201, _usuario_para_json(usuario)
 
-    def _listar_usuarios(self):
-        usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"admin"})
-        usuarios = listar_usuarios()
-        return 200, {"usuarios": [_usuario_para_dict(u) for u in usuarios]}
+    # -------------------------------------------------------------- animais
 
-    # ---------- handlers: animais ----------
+    def _listar_animais(self, query: dict):
+        status = query.get("status", [None])[0]
+        id_instituicao = query.get("id_instituicao", [None])[0]
+        animais = listar_animais(status=status, id_instituicao=int(id_instituicao) if id_instituicao else None)
+        return [_animal_para_json(a) for a in animais]
 
-    def _listar_animais(self):
-        self._usuario_autenticado()  # qualquer perfil logado pode consultar
-        animais = listar_animais()
-        return 200, {"animais": [_animal_para_dict(a) for a in animais]}
-
-    def _buscar_animal(self, animal_id):
-        self._usuario_autenticado()
+    def _buscar_animal(self, animal_id: int):
         animal = buscar_animal_por_id(animal_id)
         if animal is None:
             raise ErroHTTP(404, "Animal não encontrado.")
-        return 200, _animal_para_dict(animal)
+        return _animal_para_json(animal)
 
     def _criar_animal(self):
         usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"admin", "voluntario"})
-        dados = self._ler_corpo_json()
-        try:
-            animal = criar_animal(
-                nome=dados.get("nome", ""),
-                especie=dados.get("especie", ""),
-                raca=dados.get("raca", ""),
-                porte=dados.get("porte", ""),
-                idade_anos=float(dados.get("idade_anos", 0) or 0),
-                nivel_energia=dados.get("nivel_energia", ""),
-                temperamento=dados.get("temperamento", ""),
-                convive_criancas=bool(dados.get("convive_criancas", False)),
-                convive_outros_pets=bool(dados.get("convive_outros_pets", False)),
-                necessidades_especiais=dados.get("necessidades_especiais", ""),
-                espaco_recomendado=dados.get("espaco_recomendado", ""),
-                cadastrado_por=usuario.id,
-            )
-        except DadosDoAnimalInvalidosError as e:
-            raise ErroHTTP(400, str(e))
-        return 201, _animal_para_dict(animal)
-
-    def _atualizar_animal(self, animal_id):
-        usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"admin", "voluntario"})
-        dados = self._ler_corpo_json()
-        try:
-            animal = atualizar_animal(animal_id, **dados)
-        except DadosDoAnimalInvalidosError as e:
-            raise ErroHTTP(400, str(e))
-        return 200, _animal_para_dict(animal)
-
-    def _excluir_animal(self, animal_id):
-        usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"admin"})
-        excluir_animal(animal_id)
-        return 200, {"mensagem": "Animal excluído com sucesso."}
-
-    # ---------- handlers: instituições ----------
-
-    def _listar_instituicoes(self):
-        self._usuario_autenticado()
-        instituicoes = listar_instituicoes()
-        return 200, {"instituicoes": [_instituicao_para_dict(i) for i in instituicoes]}
-
-    def _buscar_instituicao(self, instituicao_id):
-        self._usuario_autenticado()
-        instituicao = buscar_instituicao_por_id(instituicao_id)
-        if instituicao is None:
-            raise ErroHTTP(404, "Instituição não encontrada.")
-        return 200, _instituicao_para_dict(instituicao)
-
-    def _criar_instituicao(self):
-        usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"admin"})
-        dados = self._ler_corpo_json()
-        try:
-            instituicao = criar_instituicao(
-                nome=dados.get("nome", ""),
-                cidade=dados.get("cidade", ""),
-                status=dados.get("status", "pendente"),
-            )
-        except DadosDaInstituicaoInvalidosError as e:
-            raise ErroHTTP(400, str(e))
-        return 201, _instituicao_para_dict(instituicao)
-
-    def _atualizar_instituicao(self, instituicao_id):
-        usuario = self._usuario_autenticado()
-        self._exigir_dono_da_instituicao_ou_admin(usuario, instituicao_id)
-        dados = self._ler_corpo_json()
-        # só admin pode alterar o status de verificação da instituição
-        if "status" in dados and not usuario.eh_admin:
-            raise ErroHTTP(403, "Só um administrador pode alterar o status de verificação.")
-        try:
-            instituicao = atualizar_instituicao(instituicao_id, **dados)
-        except DadosDaInstituicaoInvalidosError as e:
-            raise ErroHTTP(400, str(e))
-        return 200, _instituicao_para_dict(instituicao)
-
-    # ---------- handlers: solicitações de adoção ----------
-
-    def _criar_solicitacao(self):
-        usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"adotante"})
-        dados = self._ler_corpo_json()
-        try:
-            solicitacao = criar_solicitacao(
-                animal_id=int(dados.get("animal_id", 0)),
-                adotante_id=usuario.id,
-                observacoes=dados.get("observacoes", ""),
-            )
-        except SolicitacaoInvalidaError as e:
-            raise ErroHTTP(400, str(e))
-        return 201, _solicitacao_para_dict(solicitacao)
-
-    def _listar_solicitacoes(self):
-        usuario = self._usuario_autenticado()
-        if usuario.eh_admin:
-            solicitacoes = listar_todas_solicitacoes()
-        elif usuario.eh_voluntario:
-            solicitacoes = listar_solicitacoes_da_instituicao(usuario.instituicao_id) if usuario.instituicao_id else []
-        else:  # adotante
-            solicitacoes = listar_solicitacoes_do_adotante(usuario.id)
-        return 200, {"solicitacoes": [_solicitacao_para_dict(s) for s in solicitacoes]}
-
-    def _buscar_solicitacao(self, solicitacao_id):
-        usuario = self._usuario_autenticado()
-        solicitacao = buscar_solicitacao_por_id(solicitacao_id)
-        if solicitacao is None:
-            raise ErroHTTP(404, "Solicitação não encontrada.")
-        if usuario.eh_adotante and solicitacao.adotante_id != usuario.id:
-            raise ErroHTTP(403, "Esta solicitação não é sua.")
-        if not usuario.eh_adotante:
-            self._exigir_pode_gerenciar_solicitacao(usuario, solicitacao)
-        return 200, _solicitacao_para_dict(solicitacao)
-
-    def _atualizar_solicitacao(self, solicitacao_id):
-        """Avança a etapa e/ou muda o status (aprovar/recusar/cancelar).
-        Só quem gerencia a instituição dona do animal (ou admin) pode —
-        exceto cancelamento, que o próprio adotante também pode fazer."""
-        usuario = self._usuario_autenticado()
-        solicitacao = buscar_solicitacao_por_id(solicitacao_id)
-        if solicitacao is None:
-            raise ErroHTTP(404, "Solicitação não encontrada.")
-
-        dados = self._ler_corpo_json()
-        novo_status = dados.get("status")
-        nova_etapa = dados.get("etapa")
-
-        eh_cancelamento_pelo_proprio_adotante = (
-            usuario.eh_adotante
-            and solicitacao.adotante_id == usuario.id
-            and novo_status == "cancelada"
-            and nova_etapa is None
+        self._exigir_instituicao_ou_admin(usuario)
+        corpo = self._ler_corpo_json()
+        id_instituicao = usuario.id if usuario.eh_instituicao else corpo.get("id_instituicao")
+        if not id_instituicao:
+            raise ErroHTTP(400, "id_instituicao é obrigatório quando um administrador cadastra o animal.")
+        animal = criar_animal(
+            id_instituicao=id_instituicao,
+            nome=corpo.get("nome", ""),
+            data_nascimento=corpo.get("data_nascimento"),
+            caracteristicas=corpo.get("caracteristicas", []),
         )
-        if not eh_cancelamento_pelo_proprio_adotante:
-            self._exigir_pode_gerenciar_solicitacao(usuario, solicitacao)
+        return 201, _animal_para_json(animal)
 
-        try:
-            if nova_etapa:
-                solicitacao = avancar_etapa(solicitacao_id, nova_etapa)
-            if novo_status:
-                solicitacao = atualizar_status_solicitacao(
-                    solicitacao_id, novo_status, observacoes=dados.get("observacoes")
-                )
-        except SolicitacaoInvalidaError as e:
-            raise ErroHTTP(400, str(e))
-
-        return 200, _solicitacao_para_dict(solicitacao)
-
-    # ---------- handlers: visitas ----------
-
-    def _agendar_visita(self, solicitacao_id):
+    def _atualizar_animal(self, animal_id: int):
         usuario = self._usuario_autenticado()
-        solicitacao = buscar_solicitacao_por_id(solicitacao_id)
-        if solicitacao is None:
-            raise ErroHTTP(404, "Solicitação não encontrada.")
-        self._exigir_pode_gerenciar_solicitacao(usuario, solicitacao)
+        animal = buscar_animal_por_id(animal_id)
+        if animal is None:
+            raise ErroHTTP(404, "Animal não encontrado.")
+        self._exigir_dono_do_animal_ou_admin(usuario, animal)
+        corpo = self._ler_corpo_json()
+        atualizado = atualizar_animal(
+            animal_id,
+            nome=corpo.get("nome"),
+            data_nascimento=corpo.get("data_nascimento"),
+            status=corpo.get("status"),
+            caracteristicas=corpo.get("caracteristicas"),
+        )
+        return _animal_para_json(atualizado)
 
-        dados = self._ler_corpo_json()
-        try:
-            visita = agendar_visita(
-                solicitacao_id=solicitacao_id,
-                data_agendada=dados.get("data_agendada", ""),
-                observacoes=dados.get("observacoes", ""),
-            )
-            avancar_etapa(solicitacao_id, "visita")
-        except (VisitaInvalidaError, SolicitacaoInvalidaError) as e:
-            raise ErroHTTP(400, str(e))
-        return 201, _visita_para_dict(visita)
-
-    def _listar_visitas(self, solicitacao_id):
+    def _excluir_animal(self, animal_id: int):
         usuario = self._usuario_autenticado()
-        solicitacao = buscar_solicitacao_por_id(solicitacao_id)
-        if solicitacao is None:
-            raise ErroHTTP(404, "Solicitação não encontrada.")
-        if usuario.eh_adotante and solicitacao.adotante_id != usuario.id:
-            raise ErroHTTP(403, "Esta solicitação não é sua.")
+        self._exigir_admin(usuario)
+        excluir_animal(animal_id)
+        return {"ok": True}
+
+    # ---------------------------------------------------- favoritos / recomendação
+
+    def _favoritar(self, animal_id: int):
+        usuario = self._usuario_autenticado()
         if not usuario.eh_adotante:
-            self._exigir_pode_gerenciar_solicitacao(usuario, solicitacao)
-        visitas = listar_visitas_da_solicitacao(solicitacao_id)
-        return 200, {"visitas": [_visita_para_dict(v) for v in visitas]}
+            raise ErroHTTP(403, "Apenas adotantes podem favoritar animais.")
+        favoritar(usuario.id, animal_id)
+        return {"ok": True}
 
-    def _atualizar_visita(self, visita_id):
+    def _desfavoritar(self, animal_id: int):
         usuario = self._usuario_autenticado()
-        self._exigir_perfil(usuario, {"admin", "voluntario"})
-        dados = self._ler_corpo_json()
-        try:
-            visita = atualizar_visita(visita_id, **dados)
-        except VisitaInvalidaError as e:
-            raise ErroHTTP(400, str(e))
-        return 200, _visita_para_dict(visita)
+        desfavoritar(usuario.id, animal_id)
+        return {"ok": True}
+
+    def _listar_favoritos(self):
+        usuario = self._usuario_autenticado()
+        return listar_favoritos(usuario.id)
+
+    def _listar_recomendacoes(self):
+        usuario = self._usuario_autenticado()
+        if not usuario.eh_adotante:
+            raise ErroHTTP(403, "Apenas adotantes têm recomendações.")
+        historico = [f["nome_animal"] for f in []]  # placeholder não usado
+        animais_disponiveis = [a for a in listar_animais(status="Disponível")]
+        favoritados = {f["id_animal"] for f in listar_favoritos(usuario.id)}
+        historico_tags = [a.caracteristicas for a in animais_disponiveis if a.id in favoritados]
+        preferencia = vetor_de_preferencia(historico_tags)
+        candidatos = [a for a in animais_disponiveis if a.id not in favoritados]
+        if not candidatos:
+            return []
+        from matching.compatibilidade import matriz_dos_animais
+        A = matriz_dos_animais([a.caracteristicas for a in candidatos])
+        import numpy as np
+        scores = calcular_matriz_scores(preferencia.reshape(1, -1), A)[0]
+        ordenado = sorted(zip(candidatos, scores), key=lambda par: -par[1])[:10]
+        resultado = []
+        for animal, score in ordenado:
+            registrar_recomendacao(usuario.id, animal.id)
+            resultado.append({**_animal_para_json(animal), "score_compatibilidade": round(float(score), 1)})
+        return resultado
+
+    def _compatibilidade(self, animal_id: int):
+        usuario = self._usuario_autenticado()
+        if not usuario.eh_adotante:
+            raise ErroHTTP(403, "Apenas adotantes têm score de compatibilidade.")
+        animal = buscar_animal_por_id(animal_id)
+        if animal is None:
+            raise ErroHTTP(404, "Animal não encontrado.")
+        favoritados = {f["id_animal"] for f in listar_favoritos(usuario.id)}
+        todos = listar_animais()
+        historico_tags = [a.caracteristicas for a in todos if a.id in favoritados]
+        preferencia = vetor_de_preferencia(historico_tags)
+        vetor_animal = vetor_do_animal(animal.caracteristicas)
+        score = float(calcular_matriz_scores(preferencia.reshape(1, -1), vetor_animal.reshape(1, -1))[0, 0])
+        fatores = {"caracteristicas_do_animal": animal.caracteristicas, "baseado_em_favoritos": len(historico_tags)}
+        salvar_compatibilidade(usuario.id, animal_id, round(score), fatores)
+        return {"animal_id": animal_id, "score": round(score, 1), "fatores": fatores}
+
+    # -------------------------------------------------------- fluxo de adoção
+
+    def _listar_manifestacoes(self, query: dict):
+        usuario = self._usuario_autenticado()
+        if usuario.eh_adotante:
+            return listar_manifestacoes(id_adotante=usuario.id)
+        if usuario.eh_instituicao:
+            return listar_manifestacoes(id_instituicao=usuario.id)
+        return listar_manifestacoes()
+
+    def _criar_manifestacao(self):
+        usuario = self._usuario_autenticado()
+        if not usuario.eh_adotante:
+            raise ErroHTTP(403, "Apenas adotantes podem manifestar interesse em um animal.")
+        corpo = self._ler_corpo_json()
+        manifestacao = criar_manifestacao(usuario.id, corpo.get("id_animal"))
+        return 201, manifestacao.__dict__
+
+    def _exigir_dono_da_manifestacao_ou_admin(self, usuario, manifestacao_id: int):
+        if usuario.eh_admin:
+            return
+        pertence = [m for m in listar_manifestacoes(id_instituicao=usuario.id if usuario.eh_instituicao else None) if m["id"] == manifestacao_id]
+        if not pertence:
+            raise ErroHTTP(403, "Esta manifestação pertence a outra instituição.")
+
+    def _aprovar_manifestacao(self, manifestacao_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_da_manifestacao_ou_admin(usuario, manifestacao_id)
+        processo = aprovar_manifestacao(manifestacao_id)
+        return processo.__dict__
+
+    def _recusar_manifestacao(self, manifestacao_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_da_manifestacao_ou_admin(usuario, manifestacao_id)
+        manifestacao = recusar_manifestacao(manifestacao_id)
+        return manifestacao.__dict__
+
+    def _listar_processos(self, query: dict):
+        usuario = self._usuario_autenticado()
+        if usuario.eh_adotante:
+            return listar_processos(id_adotante=usuario.id)
+        if usuario.eh_instituicao:
+            return listar_processos(id_instituicao=usuario.id)
+        return listar_processos()
+
+    def _listar_etapas(self, processo_id: int):
+        self._usuario_autenticado()
+        return [e.__dict__ for e in listar_etapas(processo_id)]
+
+    def _atualizar_etapa(self, processo_id: int, etapa_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_do_processo_ou_admin(usuario, processo_id)
+        corpo = self._ler_corpo_json()
+        etapa = avancar_etapa(processo_id, etapa_id, corpo.get("status", ""), corpo.get("observacao"))
+        return etapa.__dict__
+
+    def _listar_visitas(self, processo_id: int):
+        self._usuario_autenticado()
+        return [v.__dict__ for v in listar_visitas_do_processo(processo_id)]
+
+    def _agendar_visita(self, processo_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_do_processo_ou_admin(usuario, processo_id)
+        corpo = self._ler_corpo_json()
+        visita = agendar_visita(processo_id, corpo.get("id_horario"))
+        return 201, visita.__dict__
+
+    def _atualizar_visita(self, visita_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        corpo = self._ler_corpo_json()
+        visita = atualizar_visita(visita_id, corpo.get("status", ""), corpo.get("resultado"))
+        return visita.__dict__
+
+    def _listar_horarios(self, instituicao_id: int):
+        self._usuario_autenticado()
+        return [h.__dict__ for h in listar_horarios_disponiveis(instituicao_id)]
+
+    def _criar_horario(self, instituicao_id: int):
+        usuario = self._usuario_autenticado()
+        if not (usuario.eh_admin or (usuario.eh_instituicao and usuario.id == instituicao_id)):
+            raise ErroHTTP(403, "Você só pode criar horários para a própria instituição.")
+        corpo = self._ler_corpo_json()
+        horario = criar_horario_visita(instituicao_id, corpo.get("data_hora"))
+        return 201, horario.__dict__
+
+    def _listar_documentos(self, processo_id: int):
+        self._usuario_autenticado()
+        return [d.__dict__ for d in listar_documentos(processo_id)]
+
+    def _enviar_documento(self, processo_id: int):
+        self._usuario_autenticado()
+        corpo = self._ler_corpo_json()
+        documento = enviar_documento(processo_id, corpo.get("nome", ""), corpo.get("caminho_arquivo", ""))
+        return 201, documento.__dict__
+
+    def _listar_historico(self, processo_id: int):
+        self._usuario_autenticado()
+        return [h.__dict__ for h in listar_historico(processo_id)]
+
+    def _concluir_processo(self, processo_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_do_processo_ou_admin(usuario, processo_id)
+        processo = concluir_processo(processo_id)
+        if usuario.eh_admin:
+            registrar_acao_admin(usuario.id, "Conclusão de Processo", f"Processo {processo_id} concluído.")
+        return processo.__dict__
+
+    def _cancelar_processo(self, processo_id: int):
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_do_processo_ou_admin(usuario, processo_id)
+        corpo = self._ler_corpo_json()
+        processo = cancelar_processo(processo_id, corpo.get("motivo"))
+        return processo.__dict__
 
 
-def _usuario_para_dict(usuario) -> dict:
-    return {
-        "id": usuario.id,
-        "nome": usuario.nome,
-        "email": usuario.email,
-        "perfil": usuario.perfil,
-        "instituicao_id": usuario.instituicao_id,
-        "data_cadastro": usuario.data_cadastro,
-    }
-
-
-def _animal_para_dict(animal) -> dict:
-    return {
-        "id": animal.id,
-        "nome": animal.nome,
-        "especie": animal.especie,
-        "raca": animal.raca,
-        "porte": animal.porte,
-        "idade_anos": animal.idade_anos,
-        "nivel_energia": animal.nivel_energia,
-        "temperamento": animal.temperamento,
-        "convive_criancas": animal.convive_criancas,
-        "convive_outros_pets": animal.convive_outros_pets,
-        "necessidades_especiais": animal.necessidades_especiais,
-        "espaco_recomendado": animal.espaco_recomendado,
-        "status": animal.status,
-        "data_cadastro": animal.data_cadastro,
-        "cadastrado_por": animal.cadastrado_por,
-    }
-
-
-def _instituicao_para_dict(instituicao) -> dict:
-    return {
-        "id": instituicao.id,
-        "nome": instituicao.nome,
-        "cidade": instituicao.cidade,
-        "status": instituicao.status,
-        "data_cadastro": instituicao.data_cadastro,
-    }
-
-
-def _solicitacao_para_dict(solicitacao) -> dict:
-    return {
-        "id": solicitacao.id,
-        "animal_id": solicitacao.animal_id,
-        "adotante_id": solicitacao.adotante_id,
-        "etapa": solicitacao.etapa,
-        "status": solicitacao.status,
-        "observacoes": solicitacao.observacoes,
-        "data_solicitacao": solicitacao.data_solicitacao,
-        "data_atualizacao": solicitacao.data_atualizacao,
-    }
-
-
-def _visita_para_dict(visita) -> dict:
-    return {
-        "id": visita.id,
-        "solicitacao_id": visita.solicitacao_id,
-        "data_agendada": visita.data_agendada,
-        "status": visita.status,
-        "observacoes": visita.observacoes,
-        "data_cadastro": visita.data_cadastro,
-    }
-
-
-def iniciar_servidor(host: str = "0.0.0.0", port: int = 8000):
-    init_db()
+def iniciar_servidor(host: str = "0.0.0.0", port: int = 8000) -> None:
     servidor = ThreadingHTTPServer((host, port), PetCertoHandler)
-    print(f"PetCerto backend rodando em http://localhost:{port}")
-    print("Veja docs/api.md para a lista de rotas disponíveis.")
+    print(f"Pet Certo API rodando em http://{host}:{port}")
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:

@@ -1,157 +1,156 @@
-"""
-Repositório da entidade Animal — CRUD principal do sistema.
-
-Todas as operações são feitas de fato contra o banco SQLite (não há
-dados mockados em memória): cadastrar, consultar, atualizar e excluir.
-"""
-
-from typing import Optional
+"""CRUD de animais + gestão das etiquetas (características) via
+CaracteristicaAnimal / AnimalCaracteristica."""
+from typing import List, Optional
 
 from database.db import get_connection
-from models.animal import (
-    Animal,
-    ESPECIES_VALIDAS,
-    PORTES_VALIDOS,
-    ENERGIAS_VALIDAS,
-    ESPACOS_VALIDOS,
-)
+from database.tags_padrao import TODAS_AS_TAGS
+from models.animal import Animal
 
 
 class DadosDoAnimalInvalidosError(Exception):
     pass
 
 
-def _validar_animal(
-    nome: str,
-    especie: str,
-    porte: str,
-    nivel_energia: str,
-    espaco_recomendado: str,
-) -> None:
-    if not (nome or "").strip():
-        raise DadosDoAnimalInvalidosError("O nome do animal é obrigatório.")
-    if especie not in ESPECIES_VALIDAS:
-        raise DadosDoAnimalInvalidosError(f"Espécie inválida: {especie}")
-    if porte not in PORTES_VALIDOS:
-        raise DadosDoAnimalInvalidosError(f"Porte inválido: {porte}")
-    if nivel_energia not in ENERGIAS_VALIDAS:
-        raise DadosDoAnimalInvalidosError(f"Nível de energia inválido: {nivel_energia}")
-    if espaco_recomendado not in ESPACOS_VALIDOS:
-        raise DadosDoAnimalInvalidosError(f"Espaço recomendado inválido: {espaco_recomendado}")
+def _buscar_caracteristicas_do_animal(cur, animal_id: int) -> List[str]:
+    cur.execute(
+        """
+        SELECT ca.nome FROM AnimalCaracteristica ac
+        JOIN CaracteristicaAnimal ca ON ca.idCaracteristica = ac.idCaracteristica
+        WHERE ac.idAnimal = %s
+        ORDER BY ca.nome
+        """,
+        (animal_id,),
+    )
+    return [r["nome"] for r in cur.fetchall()]
 
 
-def criar_animal(
-    nome: str,
-    especie: str,
-    raca: str,
-    porte: str,
-    idade_anos: float,
-    nivel_energia: str,
-    temperamento: str,
-    convive_criancas: bool,
-    convive_outros_pets: bool,
-    necessidades_especiais: str,
-    espaco_recomendado: str,
-    cadastrado_por: Optional[int] = None,
-) -> Animal:
-    _validar_animal(nome, especie, porte, nivel_energia, espaco_recomendado)
-
-    conn = get_connection()
-    try:
-        cursor = conn.execute(
-            """
-            INSERT INTO animais (
-                nome, especie, raca, porte, idade_anos, nivel_energia,
-                temperamento, convive_criancas, convive_outros_pets,
-                necessidades_especiais, espaco_recomendado, cadastrado_por
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                nome.strip(), especie, raca, porte, idade_anos, nivel_energia,
-                temperamento, int(convive_criancas), int(convive_outros_pets),
-                necessidades_especiais, espaco_recomendado, cadastrado_por,
-            ),
+def _validar_tags(tags: List[str]) -> None:
+    invalidas = [t for t in tags if t not in TODAS_AS_TAGS]
+    if invalidas:
+        raise DadosDoAnimalInvalidosError(
+            f"Características inválidas: {', '.join(invalidas)}. "
+            f"Use apenas etiquetas do conjunto padrão."
         )
-        conn.commit()
-        novo_id = cursor.lastrowid
-    finally:
-        conn.close()
-
-    return buscar_animal_por_id(novo_id)
 
 
-def listar_animais(status: Optional[str] = None) -> list[Animal]:
+def _definir_caracteristicas(cur, animal_id: int, tags: List[str]) -> None:
+    _validar_tags(tags)
+    cur.execute("DELETE FROM AnimalCaracteristica WHERE idAnimal = %s", (animal_id,))
+    if not tags:
+        return
+    cur.execute(
+        "SELECT idCaracteristica, nome FROM CaracteristicaAnimal WHERE nome = ANY(%s)",
+        (tags,),
+    )
+    ids = [r["idcaracteristica"] for r in cur.fetchall()]
+    for id_caracteristica in ids:
+        cur.execute(
+            "INSERT INTO AnimalCaracteristica (idAnimal, idCaracteristica) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            (animal_id, id_caracteristica),
+        )
+
+
+def criar_animal(id_instituicao: int, nome: str, data_nascimento: Optional[str], caracteristicas: List[str]) -> Animal:
+    if not nome or not nome.strip():
+        raise DadosDoAnimalInvalidosError("Nome do animal é obrigatório.")
     conn = get_connection()
     try:
-        if status:
-            rows = conn.execute(
-                "SELECT * FROM animais WHERE status = ? ORDER BY data_cadastro DESC",
-                (status,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM animais ORDER BY data_cadastro DESC"
-            ).fetchall()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO Animal (idInstituicao, nome, dataNascimento, status) "
+                "VALUES (%s, %s, %s, 'Disponível') RETURNING idAnimal",
+                (id_instituicao, nome.strip(), data_nascimento),
+            )
+            novo_id = cur.fetchone()["idanimal"]
+            _definir_caracteristicas(cur, novo_id, caracteristicas or [])
+            conn.commit()
+            return buscar_animal_por_id(novo_id)
     finally:
         conn.close()
-    return [Animal.from_row(r) for r in rows]
+
+
+def listar_animais(status: Optional[str] = None, id_instituicao: Optional[int] = None) -> List[Animal]:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            filtros, valores = [], []
+            if status:
+                filtros.append("a.status = %s")
+                valores.append(status)
+            if id_instituicao:
+                filtros.append("a.idInstituicao = %s")
+                valores.append(id_instituicao)
+            where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
+            cur.execute(
+                f"""
+                SELECT a.*, u.nomeCompleto AS nomeInstituicao
+                FROM Animal a JOIN Instituicao i ON i.idUsuario = a.idInstituicao
+                JOIN Usuario u ON u.idUsuario = i.idUsuario
+                {where}
+                ORDER BY a.idAnimal DESC
+                """,
+                valores,
+            )
+            linhas = cur.fetchall()
+            resultado = []
+            for row in linhas:
+                tags = _buscar_caracteristicas_do_animal(cur, row["idanimal"])
+                resultado.append(Animal.from_row(row, tags))
+            return resultado
+    finally:
+        conn.close()
 
 
 def buscar_animal_por_id(animal_id: int) -> Optional[Animal]:
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM animais WHERE id = ?", (animal_id,)
-        ).fetchone()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT a.*, u.nomeCompleto AS nomeInstituicao
+                FROM Animal a JOIN Instituicao i ON i.idUsuario = a.idInstituicao
+                JOIN Usuario u ON u.idUsuario = i.idUsuario
+                WHERE a.idAnimal = %s
+                """,
+                (animal_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            tags = _buscar_caracteristicas_do_animal(cur, animal_id)
+            return Animal.from_row(row, tags)
     finally:
         conn.close()
-    return Animal.from_row(row) if row else None
 
 
-def atualizar_animal(animal_id: int, **campos) -> Animal:
-    """Atualiza os campos informados do animal. Ex:
-    atualizar_animal(5, nome="Rex", status="adotado")"""
-
-    atual = buscar_animal_por_id(animal_id)
-    if atual is None:
-        raise DadosDoAnimalInvalidosError("Animal não encontrado.")
-
-    permitido = {
-        "nome", "especie", "raca", "porte", "idade_anos", "nivel_energia",
-        "temperamento", "convive_criancas", "convive_outros_pets",
-        "necessidades_especiais", "espaco_recomendado", "status",
-    }
-    campos_validos = {k: v for k, v in campos.items() if k in permitido}
-    if not campos_validos:
-        return atual
-
-    if "especie" in campos_validos and campos_validos["especie"] not in ESPECIES_VALIDAS:
-        raise DadosDoAnimalInvalidosError("Espécie inválida.")
-    if "porte" in campos_validos and campos_validos["porte"] not in PORTES_VALIDOS:
-        raise DadosDoAnimalInvalidosError("Porte inválido.")
-
-    # normaliza booleanos vindos como True/False (Python) ou 0/1 (JSON)
-    for campo_bool in ("convive_criancas", "convive_outros_pets"):
-        if campo_bool in campos_validos:
-            campos_validos[campo_bool] = int(bool(campos_validos[campo_bool]))
-
-    set_clause = ", ".join(f"{campo} = ?" for campo in campos_validos)
-    valores = list(campos_validos.values()) + [animal_id]
-
+def atualizar_animal(animal_id: int, **campos) -> Optional[Animal]:
     conn = get_connection()
     try:
-        conn.execute(f"UPDATE animais SET {set_clause} WHERE id = ?", valores)
-        conn.commit()
+        with conn.cursor() as cur:
+            caracteristicas = campos.pop("caracteristicas", None)
+            colunas_permitidas = {"nome": "nome", "data_nascimento": "dataNascimento", "status": "status"}
+            sets, valores = [], []
+            for chave, valor in campos.items():
+                if chave in colunas_permitidas and valor is not None:
+                    sets.append(f"{colunas_permitidas[chave]} = %s")
+                    valores.append(valor)
+            if sets:
+                valores.append(animal_id)
+                cur.execute(f"UPDATE Animal SET {', '.join(sets)} WHERE idAnimal = %s", valores)
+            if caracteristicas is not None:
+                _definir_caracteristicas(cur, animal_id, caracteristicas)
+            conn.commit()
+            return buscar_animal_por_id(animal_id)
     finally:
         conn.close()
-
-    return buscar_animal_por_id(animal_id)
 
 
 def excluir_animal(animal_id: int) -> None:
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM animais WHERE id = ?", (animal_id,))
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM Animal WHERE idAnimal = %s", (animal_id,))
         conn.commit()
     finally:
         conn.close()

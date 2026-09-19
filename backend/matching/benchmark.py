@@ -1,96 +1,95 @@
-"""
-Compara o tempo de execução das três abordagens do cálculo da matriz
-de compatibilidade: ingênua (loop Python puro), vetorizada (NumPy) e
-paralela (multiprocessing).
-
-Serve como prova concreta de otimização para a apresentação/vídeo —
-não é só "IA magicamente mais rápida", são números reais.
-
-Como usar:
-    cd backend
-    python -m matching.benchmark
-"""
-
+"""Mede o tempo das três implementações do cálculo de compatibilidade
+(ingênua, vetorizada com NumPy, paralela com multiprocessing) em cenários
+de tamanhos crescentes, e confirma que todas produzem o mesmo resultado
+numérico (a paralela e a vetorizada usam a mesma fórmula; a ingênua é a
+referência independente escrita com loops puros)."""
 import random
 import time
 
+import numpy as np
+
+from database.tags_padrao import CATEGORIAS_PADRAO, TAGS_BOOLEANAS
 from matching.compatibilidade import (
     calcular_matriz_scores,
     calcular_matriz_scores_ingenua,
     calcular_matriz_scores_paralelo,
     gerar_pareamento_estavel,
+    matriz_de_preferencias,
+    matriz_dos_animais,
 )
 
-
-def _gerar_adotante():
-    return {
-        "preferencia_porte": random.choice(["pequeno", "medio", "grande"]),
-        "energia_desejada": random.choice(["baixo", "medio", "alto"]),
-        "tem_criancas": random.random() < 0.4,
-        "tem_outros_pets": random.random() < 0.3,
-        "tipo_moradia": random.choice(["apartamento", "casa_com_quintal"]),
-        "experiencia_anos": random.randint(0, 15),
-    }
+random.seed(42)
 
 
-def _gerar_animal():
-    return {
-        "porte": random.choice(["pequeno", "medio", "grande"]),
-        "nivel_energia": random.choice(["baixo", "medio", "alto"]),
-        "convive_criancas": random.random() < 0.7,
-        "convive_outros_pets": random.random() < 0.7,
-        "espaco_recomendado": random.choice(["apartamento", "casa_com_quintal", "indiferente"]),
-        "necessidades_especiais": random.random() < 0.2,
-    }
+def _tags_aleatorias_de_animal():
+    tags = []
+    for categoria_tags in CATEGORIAS_PADRAO.values():
+        tags.append(random.choice(categoria_tags))
+    for tag in TAGS_BOOLEANAS:
+        if random.random() < 0.5:
+            tags.append(tag)
+    return tags
 
 
-def _medir(func, *args):
+def _historico_aleatorio_de_adotante(pool_de_tags_de_animais, tamanho_max=5):
+    if random.random() < 0.15 or not pool_de_tags_de_animais:
+        return []  # simula adotante novo, sem histórico (cold start)
+    quantidade = random.randint(1, min(tamanho_max, len(pool_de_tags_de_animais)))
+    return random.sample(pool_de_tags_de_animais, quantidade)
+
+
+def _rodar_cenario(n_adotantes: int, n_animais: int) -> None:
+    tags_dos_animais = [_tags_aleatorias_de_animal() for _ in range(n_animais)]
+    historicos = [_historico_aleatorio_de_adotante(tags_dos_animais) for _ in range(n_adotantes)]
+
+    A = matriz_dos_animais(tags_dos_animais)
+    P = matriz_de_preferencias(historicos)
+
     inicio = time.perf_counter()
-    resultado = func(*args)
-    duracao = time.perf_counter() - inicio
-    return resultado, duracao
+    scores_ingenua = calcular_matriz_scores_ingenua(P, A)
+    tempo_ingenua = time.perf_counter() - inicio
+
+    inicio = time.perf_counter()
+    scores_vetorizada = calcular_matriz_scores(P, A)
+    tempo_vetorizada = time.perf_counter() - inicio
+
+    inicio = time.perf_counter()
+    scores_paralela = calcular_matriz_scores_paralelo(P, A)
+    tempo_paralela = time.perf_counter() - inicio
+
+    diferenca_max = np.max(np.abs(scores_ingenua - scores_vetorizada))
+    assert diferenca_max < 1e-9, f"Divergência entre ingênua e vetorizada: {diferenca_max}"
+    diferenca_paralela = np.max(np.abs(scores_vetorizada - scores_paralela))
+    assert diferenca_paralela < 1e-9, f"Divergência entre vetorizada e paralela: {diferenca_paralela}"
+
+    pares = n_adotantes * n_animais
+    print(f"=== {n_adotantes} adotantes x {n_animais} animais ({pares} pares) ===")
+    print(
+        f"Ingênua: {tempo_ingenua:.4f}s | "
+        f"Vetorizada: {tempo_vetorizada:.4f}s ({tempo_ingenua / max(tempo_vetorizada, 1e-9):.1f}x) | "
+        f"Paralela: {tempo_paralela:.4f}s ({tempo_ingenua / max(tempo_paralela, 1e-9):.1f}x)"
+    )
+    print(f"Maior diferença numérica entre versões: {diferenca_max:.2e} (esperado: praticamente zero)\n")
 
 
-def main():
-    random.seed(42)  # resultados reproduzíveis
-
+def rodar_benchmarks() -> None:
+    print("Benchmark do algoritmo de compatibilidade (Pet Certo)\n")
     for n in (50, 200, 1000):
-        adotantes = [_gerar_adotante() for _ in range(n)]
-        animais = [_gerar_animal() for _ in range(n)]
+        _rodar_cenario(n, n)
 
-        print(f"\n=== {n} adotantes x {n} animais ({n*n} pares calculados) ===")
-
-        matriz_ingenua, t_ingenua = _medir(calcular_matriz_scores_ingenua, adotantes, animais)
-        print(f"Ingênua (loop Python puro):  {t_ingenua:.4f}s")
-
-        matriz_vetorizada, t_vetorizada = _medir(calcular_matriz_scores, adotantes, animais)
-        ganho_v = t_ingenua / t_vetorizada if t_vetorizada > 0 else float("inf")
-        print(f"Vetorizada (NumPy):          {t_vetorizada:.4f}s   ({ganho_v:.1f}x mais rápido)")
-
-        # confere que as duas versões dão o mesmo resultado (correção, não só velocidade)
-        diferenca_max = abs(matriz_ingenua - matriz_vetorizada).max()
-        assert diferenca_max < 1e-9, "as versões deram resultados diferentes!"
-
-        matriz_paralela, t_paralela = _medir(calcular_matriz_scores_paralelo, adotantes, animais)
-        ganho_p = t_ingenua / t_paralela if t_paralela > 0 else float("inf")
-        print(f"Paralela (multiprocessing):  {t_paralela:.4f}s   ({ganho_p:.1f}x mais rápido)")
-
-    print("\n=== Exemplo de pareamento estável (Gale-Shapley), com 6 adotantes e 4 animais ===")
-    adotantes_exemplo = [_gerar_adotante() for _ in range(6)]
-    animais_exemplo = [_gerar_animal() for _ in range(4)]
-    ids_adotantes = [f"adotante_{i}" for i in range(6)]
-    ids_animais = [f"animal_{j}" for j in range(4)]
-
-    matriz = calcular_matriz_scores(adotantes_exemplo, animais_exemplo)
-    pareamento = gerar_pareamento_estavel(ids_adotantes, ids_animais, matriz)
-    for adotante_id, animal_id in pareamento.items():
-        i = ids_adotantes.index(adotante_id)
-        j = ids_animais.index(animal_id)
-        print(f"{adotante_id} <-> {animal_id}  (score {matriz[i, j]:.2f})")
-    sem_par = set(ids_adotantes) - set(pareamento.keys())
-    if sem_par:
-        print(f"Sem par nesta rodada: {sorted(sem_par)} (mais adotantes que animais disponíveis)")
+    print("=== Demonstração de pareamento estável (Gale-Shapley) ===")
+    tags_animais_demo = [_tags_aleatorias_de_animal() for _ in range(4)]
+    historicos_demo = [_historico_aleatorio_de_adotante(tags_animais_demo) for _ in range(6)]
+    A_demo = matriz_dos_animais(tags_animais_demo)
+    P_demo = matriz_de_preferencias(historicos_demo)
+    scores_demo = calcular_matriz_scores(P_demo, A_demo)
+    ids_adotantes = list(range(1, 7))
+    ids_animais = list(range(101, 105))
+    pareamento = gerar_pareamento_estavel(ids_adotantes, ids_animais, scores_demo)
+    for id_adotante, id_animal in pareamento.items():
+        print(f"  Adotante {id_adotante} -> Animal {id_animal}")
+    print(f"({len(pareamento)} de {len(ids_animais)} animais pareados)")
 
 
 if __name__ == "__main__":
-    main()
+    rodar_benchmarks()

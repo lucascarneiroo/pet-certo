@@ -1,25 +1,30 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { cadastrarUsuario, login } from "../services/api";
 
 const DESTINATIONS = {
   adotante: "/adotante",
-  voluntario: "/instituicao",
-  admin: "/admin",
+  instituicao: "/instituicao",
+  administrador: "/admin",
 };
 
 export default function Signup() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const perfil = params.get("perfil") || "adotante";
+
   const [form, setForm] = useState({
     nome: "",
+    cpf: "",
+    endereco: "",
     email: "",
     senha: "",
-    perfil: "adotante", // "adotante" ou "instituicao" — admin não pode se autocadastrar
-    instituicao_nome: "",
-    instituicao_cidade: "",
+    cnpj: "",
+    localizacao: "",
+    info_abrigo: "",
   });
   const [erro, setErro] = useState("");
-  const [carregando, setCarregando] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -28,15 +33,15 @@ export default function Signup() {
   async function handleSubmit(e) {
     e.preventDefault();
     setErro("");
-    setCarregando(true);
+    setEnviando(true);
     try {
-      await cadastrarUsuario(form);
+      await cadastrarUsuario({ ...form, perfil });
       const usuario = await login(form.email, form.senha);
       navigate(DESTINATIONS[usuario.perfil] || "/adotante");
     } catch (err) {
-      setErro(err.message || "Não foi possível criar a conta.");
+      setErro(err.message);
     } finally {
-      setCarregando(false);
+      setEnviando(false);
     }
   }
 
@@ -44,88 +49,106 @@ export default function Signup() {
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-card">
         <h1 className="text-xl font-extrabold text-ink">Criar conta</h1>
-        <p className="mt-1 text-sm text-muted">Comece seu perfil no Pet Certo</p>
+        <p className="mt-1 text-sm text-muted">
+          {perfil === "instituicao" ? "Cadastre sua instituição" : "Comece seu perfil de adotante"}
+        </p>
+
+        {erro && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erro}</p>}
 
         <form onSubmit={handleSubmit} className="mt-6 grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Nome
-            </label>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Nome</label>
             <input
               value={form.nome}
               onChange={update("nome")}
+              required
               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
             />
           </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              E-mail
-            </label>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">E-mail</label>
             <input
               type="email"
               value={form.email}
               onChange={update("email")}
+              required
               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
             />
           </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Senha (mín. 6 caracteres)
-            </label>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Senha</label>
             <input
               type="password"
               value={form.senha}
               onChange={update("senha")}
+              required
+              minLength={6}
               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
             />
           </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Eu sou
-            </label>
-            <select
-              value={form.perfil}
-              onChange={update("perfil")}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
-            >
-              <option value="adotante">Adotante</option>
-              <option value="instituicao">Instituição / ONG</option>
-            </select>
-          </div>
 
-          {form.perfil === "instituicao" && (
+          {perfil === "adotante" && (
             <>
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-                  Nome da instituição
-                </label>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">CPF</label>
                 <input
-                  value={form.instituicao_nome}
-                  onChange={update("instituicao_nome")}
+                  placeholder="000.000.000-00"
+                  value={form.cpf}
+                  onChange={update("cpf")}
+                  required
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
                 />
               </div>
               <div className="col-span-2">
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-                  Cidade
-                </label>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Endereço</label>
                 <input
-                  value={form.instituicao_cidade}
-                  onChange={update("instituicao_cidade")}
+                  value={form.endereco}
+                  onChange={update("endereco")}
+                  required
                   className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
                 />
               </div>
             </>
           )}
 
-          {erro && <p className="col-span-2 text-xs font-semibold text-red-600">{erro}</p>}
+          {perfil === "instituicao" && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">CNPJ</label>
+                <input
+                  placeholder="00.000.000/0000-00"
+                  value={form.cnpj}
+                  onChange={update("cnpj")}
+                  required
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Localização</label>
+                <input
+                  value={form.localizacao}
+                  onChange={update("localizacao")}
+                  required
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Sobre o abrigo</label>
+                <input
+                  value={form.info_abrigo}
+                  onChange={update("info_abrigo")}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                />
+              </div>
+            </>
+          )}
 
           <button
             type="submit"
-            disabled={carregando}
+            disabled={enviando}
             className="col-span-2 mt-1 rounded-lg bg-adopter py-2.5 text-sm font-semibold text-white transition hover:bg-adopter-dark disabled:opacity-60"
           >
-            {carregando ? "Criando..." : "Criar conta"}
+            {enviando ? "Criando conta..." : "Criar conta"}
           </button>
         </form>
       </div>

@@ -1,111 +1,163 @@
-# Modelo Entidade-Relacionamento (MER) — PetCerto
+# Modelo Entidade-Relacionamento (MER) — Pet Certo
 
-> Renderiza automaticamente no GitHub (é um diagrama Mermaid dentro do Markdown).
+Banco de dados: PostgreSQL. Modelagem definida por Henrique (Banco de Dados
+e Documentação) e adotada como oficial pelo backend.
+
+O usuário é modelado por herança: `Usuario` é a tabela-base (login, senha,
+nome) e `Adotante`, `Instituicao` e `Administrador` são tabelas filhas —
+cada uma reaproveita o `idUsuario` como chave primária e estrangeira. O
+perfil de alguém não é uma coluna, é "em qual tabela filha essa pessoa tem
+uma linha".
 
 ```mermaid
 erDiagram
-    INSTITUICAO {
-        int id PK
-        string nome
-        string cidade
-        string status
-        string data_cadastro
-    }
+    USUARIO ||--o| ADOTANTE : "é"
+    USUARIO ||--o| INSTITUICAO : "é"
+    USUARIO ||--o| ADMINISTRADOR : "é"
+    ADMINISTRADOR ||--o{ REGISTRO_ADMINISTRATIVO : registra
+
+    INSTITUICAO ||--o{ ANIMAL : cadastra
+    ANIMAL ||--o{ ANIMAL_CARACTERISTICA : possui
+    CARACTERISTICA_ANIMAL ||--o{ ANIMAL_CARACTERISTICA : classifica
+
+    ADOTANTE ||--o{ FAVORITO : favorita
+    ANIMAL ||--o{ FAVORITO : "é favoritado"
+    ADOTANTE ||--o{ RECOMENDACAO : recebe
+    ANIMAL ||--o{ RECOMENDACAO : "é recomendado"
+    ADOTANTE ||--o{ COMPATIBILIDADE : possui
+    ANIMAL ||--o{ COMPATIBILIDADE : possui
+
+    ADOTANTE ||--o{ MANIFESTACAO_INTERESSE : manifesta
+    ANIMAL ||--o{ MANIFESTACAO_INTERESSE : recebe
+    MANIFESTACAO_INTERESSE ||--o| PROCESSO_ADOCAO : origina
+    PROCESSO_ADOCAO ||--o{ ETAPA_ADOCAO : possui
+    PROCESSO_ADOCAO ||--o{ VISITA : agenda
+    PROCESSO_ADOCAO ||--o{ DOCUMENTO : recebe
+    PROCESSO_ADOCAO ||--o{ HISTORICO_PROCESSO : registra
+    INSTITUICAO ||--o{ HORARIO_VISITA : oferece
+    HORARIO_VISITA ||--o| VISITA : reserva
 
     USUARIO {
-        int id PK
-        string nome
-        string email UK
-        string senha_hash
-        string salt
-        string perfil
-        int instituicao_id FK
-        string data_cadastro
+        int idUsuario PK
+        string login
+        string senha
+        string nomeCompleto
     }
-
+    ADOTANTE {
+        int idUsuario PK_FK
+        string cpf
+        string endereco
+        decimal scorePerfil
+    }
+    INSTITUICAO {
+        int idUsuario PK_FK
+        string cnpj
+        string localizacao
+        string infoAbrigo
+    }
+    ADMINISTRADOR {
+        int idUsuario PK_FK
+        string permissoes
+        string infoAdmin
+    }
+    REGISTRO_ADMINISTRATIVO {
+        int idRegistroAdmin PK
+        int idAdministrador FK
+        string tipoAtividade
+        timestamp dataHora
+        string descricao
+    }
     ANIMAL {
-        int id PK
+        int idAnimal PK
+        int idInstituicao FK
         string nome
-        string especie
-        string raca
-        string porte
-        float idade_anos
-        string nivel_energia
-        string temperamento
-        boolean convive_criancas
-        boolean convive_outros_pets
-        string necessidades_especiais
-        string espaco_recomendado
+        date dataNascimento
         string status
-        string data_cadastro
-        int cadastrado_por FK
     }
-
-    SOLICITACAO_ADOCAO {
-        int id PK
-        int animal_id FK
-        int adotante_id FK
-        string etapa
+    CARACTERISTICA_ANIMAL {
+        int idCaracteristica PK
+        string nome
+    }
+    ANIMAL_CARACTERISTICA {
+        int idAnimal PK_FK
+        int idCaracteristica PK_FK
+    }
+    FAVORITO {
+        int idFavorito PK
+        int idAdotante FK
+        int idAnimal FK
+        timestamp dataFavorito
+    }
+    RECOMENDACAO {
+        int idRecomendacao PK
+        int idAdotante FK
+        int idAnimal FK
+        timestamp dataGerada
+    }
+    COMPATIBILIDADE {
+        int idCompatibilidade PK
+        int idAdotante FK
+        int idAnimal FK
+        int score
+        jsonb fatores
+    }
+    MANIFESTACAO_INTERESSE {
+        int idManifestacao PK
+        int idAdotante FK
+        int idAnimal FK
+        timestamp dataManifestacao
         string status
-        string observacoes
-        string data_solicitacao
-        string data_atualizacao
     }
-
+    PROCESSO_ADOCAO {
+        int idProcesso PK
+        int idManifestacao FK
+        string status
+    }
+    ETAPA_ADOCAO {
+        int idEtapa PK
+        int idProcesso FK
+        string nome
+        string status
+        timestamp dataInicio
+        timestamp dataFim
+    }
+    HORARIO_VISITA {
+        int idHorario PK
+        int idInstituicao FK
+        timestamp dataHora
+        string status
+    }
     VISITA {
-        int id PK
-        int solicitacao_id FK
-        string data_agendada
+        int idVisita PK
+        int idProcesso FK
+        int idHorario FK
+        timestamp dataVisita
         string status
-        string observacoes
-        string data_cadastro
+        string resultado
     }
-
-    INSTITUICAO ||--o{ USUARIO : "tem voluntários"
-    USUARIO ||--o{ ANIMAL : "cadastra"
-    ANIMAL ||--o{ SOLICITACAO_ADOCAO : "recebe"
-    USUARIO ||--o{ SOLICITACAO_ADOCAO : "solicita (adotante)"
-    SOLICITACAO_ADOCAO ||--o{ VISITA : "agenda"
+    DOCUMENTO {
+        int idDocumento PK
+        int idProcesso FK
+        string nome
+        string caminhoArquivo
+        timestamp dataEnvio
+    }
+    HISTORICO_PROCESSO {
+        int idHistorico PK
+        int idProcesso FK
+        timestamp dataHora
+        string acao
+        string mudanca
+    }
 ```
 
-## Entidades
+## Por que características são etiquetas, e não colunas
 
-### Instituição
-ONG ou abrigo. Criada automaticamente quando um usuário se cadastra como
-`voluntario` informando o nome da instituição (autocadastro), ou por um
-administrador.
-
-### Usuário
-Representa qualquer pessoa com acesso ao sistema — administrador, voluntário
-(vinculado a uma instituição) ou adotante. O **perfil** é o que define o que
-cada um pode fazer (ver `docs/arquitetura.md`).
-
-### Animal
-Cadastrado por um usuário (voluntário de uma instituição, ou admin). Guarda
-as características usadas tanto para exibição quanto para o algoritmo de
-compatibilidade (porte, energia, convivência com crianças e outros pets,
-espaço recomendado).
-
-### Solicitação de Adoção
-Representa o pedido de um adotante por um animal específico, com um fluxo de
-etapas (`interesse` → `analise` → `visita` → `documentos` → `aprovacao` →
-`concluida`) e um status (`em_andamento`, `aprovada`, `recusada`, `cancelada`).
-
-### Visita
-Um agendamento vinculado a uma solicitação de adoção específica — parte do
-processo de avaliação antes da aprovação final.
-
-## Relacionamentos
-
-- Uma **Instituição** tem vários **Usuários** (voluntários) — 1:N, via `usuarios.instituicao_id`
-- Um **Usuário** pode cadastrar vários **Animais** — 1:N, via `animais.cadastrado_por`
-- Um **Animal** pode receber várias **Solicitações de Adoção** ao longo do tempo (uma por vez em andamento) — 1:N, via `solicitacoes_adocao.animal_id`
-- Um **Usuário** (adotante) pode fazer várias **Solicitações de Adoção** — 1:N, via `solicitacoes_adocao.adotante_id`
-- Uma **Solicitação de Adoção** pode ter várias **Visitas** agendadas — 1:N, via `visitas.solicitacao_id`
-
-## Regras de negócio refletidas no modelo
-
-- Um animal só recebe uma nova solicitação se estiver com status `disponivel`; ao receber uma, vira `em_processo` automaticamente
-- Aprovar uma solicitação marca o animal como `adotado`; recusar/cancelar devolve para `disponivel` (se não houver outra solicitação ativa)
-- A etapa de uma solicitação só avança, nunca retrocede
-- Um voluntário só gerencia solicitações de animais cadastrados por alguém da própria instituição (isolamento entre ONGs)
+`CaracteristicaAnimal` + `AnimalCaracteristica` formam um relacionamento
+muitos-para-muitos livre: qualquer característica pode ser cadastrada como
+uma linha, sem alterar a estrutura da tabela `Animal`. Para o algoritmo de
+compatibilidade continuar funcionando de forma objetiva, o backend usa um
+conjunto padrão e fixo de etiquetas (ver `backend/database/tags_padrao.py`
+e `GET /api/tags`), agrupadas em categorias (espécie, porte, energia,
+espaço, experiência, e três marcações booleanas). O modelo do banco
+continua genérico; quem restringe o vocabulário é a camada de aplicação.
