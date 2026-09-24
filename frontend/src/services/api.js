@@ -90,7 +90,16 @@ function animalDoBackendParaFrontend(a) {
 }
 
 export async function listarAnimais(filtros = {}) {
-  const query = new URLSearchParams(filtros).toString();
+  const params = new URLSearchParams();
+  for (const [chave, valor] of Object.entries(filtros)) {
+    if (valor === undefined || valor === null || valor === "") continue;
+    if (Array.isArray(valor)) {
+      valor.forEach((v) => v && params.append(chave, v));
+    } else {
+      params.append(chave, valor);
+    }
+  }
+  const query = params.toString();
   const dados = await chamarApi(`/api/animais${query ? `?${query}` : ""}`, { autenticado: false });
   return dados.map(animalDoBackendParaFrontend);
 }

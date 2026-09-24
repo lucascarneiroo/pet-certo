@@ -1,81 +1,237 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
-import { animals as initialAnimals } from "../../data/mockData";
+import {
+  atualizarAnimal,
+  criarAnimal,
+  getUsuario,
+  listarAnimais,
+  listarTagsPadrao,
+} from "../../services/api";
 
-const emptyForm = {
-  nome: "",
-  especie: "Cão",
-  idade: "",
-  porte: "Pequeno",
-  situacao: "Disponível",
-  comportamento: "",
-};
+// valores canônicos usados pelo fluxo de adoção (ver backend/database/adocao_repository.py)
+const STATUS_OPCOES = ["Disponível", "Em Processo", "Adotado"];
+
+const formVazio = { nome: "", data_nascimento: "", tags: [] };
+
+// separa as etiquetas padrão em categorias de escolha única ("Porte: Pequeno", "Porte: Médio"...)
+// e etiquetas booleanas soltas ("Convive com Crianças"), a partir do texto de cada etiqueta.
+function agruparTags(tags) {
+  const categorias = new Map();
+  const booleanas = [];
+  for (const tag of tags) {
+    const indice = tag.indexOf(": ");
+    if (indice === -1) {
+      booleanas.push(tag);
+      continue;
+    }
+    const categoria = tag.slice(0, indice);
+    if (!categorias.has(categoria)) categorias.set(categoria, []);
+    categorias.get(categoria).push(tag);
+  }
+  return { categorias, booleanas };
+}
 
 export default function OngAnimals() {
-  const [animals, setAnimals] = useState(initialAnimals);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const usuario = getUsuario();
 
-  function update(field) {
-    return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const [animais, setAnimais] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erroLista, setErroLista] = useState("");
+  const [busca, setBusca] = useState("");
+
+  const [tagsDisponiveis, setTagsDisponiveis] = useState([]);
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
+  const [form, setForm] = useState(formVazio);
+  const [erroForm, setErroForm] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    listarTagsPadrao()
+      .then(setTagsDisponiveis)
+      .catch(() => setTagsDisponiveis([]));
+  }, []);
+
+  useEffect(() => {
+    if (!usuario) {
+      setCarregando(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCarregando(true);
+      setErroLista("");
+      listarAnimais({ id_instituicao: usuario.id, busca: busca || undefined })
+        .then(setAnimais)
+        .catch((err) => setErroLista(err.message))
+        .finally(() => setCarregando(false));
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca]);
+
+  const { categorias, booleanas } = useMemo(() => agruparTags(tagsDisponiveis), [tagsDisponiveis]);
+
+  function recarregar() {
+    return listarAnimais({ id_instituicao: usuario.id, busca: busca || undefined }).then(setAnimais);
   }
 
-  function handleSubmit(e) {
+  function alternarTagBooleana(tag) {
+    setForm((f) => ({
+      ...f,
+      tags: f.tags.includes(tag) ? f.tags.filter((t) => t !== tag) : [...f.tags, tag],
+    }));
+  }
+
+  function selecionarCategoria(tagsDaCategoria, valor) {
+    setForm((f) => ({
+      ...f,
+      tags: [...f.tags.filter((t) => !tagsDaCategoria.includes(t)), ...(valor ? [valor] : [])],
+    }));
+  }
+
+  function novoCadastro() {
+    setForm(formVazio);
+    setEditandoId(null);
+    setErroForm("");
+    setMostrarForm(true);
+  }
+
+  function editar(animal) {
+    setForm({
+      nome: animal.name || "",
+      data_nascimento: animal.dataNascimento || "",
+      tags: animal.caracteristicas || [],
+    });
+    setEditandoId(animal.id);
+    setErroForm("");
+    setMostrarForm(true);
+  }
+
+  async function salvar(e) {
     e.preventDefault();
-    setAnimals((list) => [
-      ...list,
-      {
-        id: form.nome.toLowerCase().replace(/\s+/g, "-") || `novo-${list.length}`,
-        name: form.nome || "Novo animal",
-        species: form.especie,
-        speciesTag: form.especie.toUpperCase(),
-        breed: "SRD",
-        age: form.idade,
-        size: form.porte,
-        status: form.situacao,
-        institution: "Instituto Amor Animal",
-        city: "Recife",
-        compat: 0,
-        temperament: form.comportamento,
-        behavior: form.comportamento,
-      },
-    ]);
-    setForm(emptyForm);
-    setShowForm(false);
+    const nome = form.nome.trim();
+    if (!nome) {
+      setErroForm("Informe o nome do animal.");
+      return;
+    }
+    setErroForm("");
+    setSalvando(true);
+    try {
+      const dados = { nome, data_nascimento: form.data_nascimento || null, caracteristicas: form.tags };
+      if (editandoId) {
+        await atualizarAnimal(editandoId, dados);
+      } else {
+        await criarAnimal(dados);
+      }
+      setMostrarForm(false);
+      setForm(formVazio);
+      setEditandoId(null);
+      await recarregar();
+    } catch (err) {
+      setErroForm(err.message);
+    } finally {
+      setSalvando(false);
+    }
   }
 
-  if (showForm) {
+  async function mudarStatus(animal, novoStatus) {
+    if (novoStatus === animal.status) return;
+    setErroLista("");
+    try {
+      await atualizarAnimal(animal.id, { status: novoStatus });
+      await recarregar();
+    } catch (err) {
+      setErroLista(err.message);
+    }
+  }
+
+  if (!usuario) {
     return (
-      <Panel title="Cadastro de Animal" subtitle="Novo perfil para recomendação">
-        <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-3">
-          <Field label="Nome" value={form.nome} onChange={update("nome")} placeholder="Mel" />
-          <Field label="Espécie" value={form.especie} onChange={update("especie")} placeholder="Cão" />
-          <Field label="Idade" value={form.idade} onChange={update("idade")} placeholder="1 ano" />
-          <Field label="Porte" value={form.porte} onChange={update("porte")} placeholder="Pequeno" />
-          <Field label="Situação" value={form.situacao} onChange={update("situacao")} placeholder="Disponível" />
-          <div className="sm:col-span-3">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Comportamento e necessidades
-            </label>
-            <textarea
-              value={form.comportamento}
-              onChange={update("comportamento")}
-              placeholder="Dócil, energia moderada, adaptação gradual a crianças."
-              rows={2}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-ong"
+      <Panel title="Gerenciamento de animais">
+        <p className="text-sm text-muted">Faça login como instituição para gerenciar seus animais.</p>
+      </Panel>
+    );
+  }
+
+  if (mostrarForm) {
+    return (
+      <Panel
+        title={editandoId ? "Editar animal" : "Cadastro de animal"}
+        subtitle={editandoId ? "Atualize os dados e as características" : "Novo perfil para recomendação"}
+      >
+        <form onSubmit={salvar} className="space-y-4">
+          {erroForm && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erroForm}</p>}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Nome"
+              value={form.nome}
+              onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+              placeholder="Mel"
+            />
+            <Field
+              label="Data de nascimento"
+              type="date"
+              value={form.data_nascimento || ""}
+              onChange={(e) => setForm((f) => ({ ...f, data_nascimento: e.target.value }))}
             />
           </div>
-          <div className="flex gap-3 sm:col-span-3">
+
+          {categorias.size > 0 && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[...categorias.entries()].map(([categoria, tagsDaCategoria]) => (
+                <div key={categoria}>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                    {categoria}
+                  </label>
+                  <select
+                    value={form.tags.find((t) => tagsDaCategoria.includes(t)) || ""}
+                    onChange={(e) => selecionarCategoria(tagsDaCategoria, e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-ong"
+                  >
+                    <option value="">Selecione...</option>
+                    {tagsDaCategoria.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag.slice(categoria.length + 2)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {booleanas.length > 0 && (
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted">
+                Outras características
+              </label>
+              <div className="flex flex-wrap gap-3">
+                {booleanas.map((tag) => (
+                  <label
+                    key={tag}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+                  >
+                    <input type="checkbox" checked={form.tags.includes(tag)} onChange={() => alternarTagBooleana(tag)} />
+                    {tag}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
             <button
               type="submit"
-              className="rounded-lg bg-ong px-4 py-2 text-sm font-semibold text-white transition hover:bg-ong-dark"
+              disabled={salvando}
+              className="rounded-lg bg-ong px-4 py-2 text-sm font-semibold text-white transition hover:bg-ong-dark disabled:opacity-60"
             >
-              Salvar animal
+              {salvando ? "Salvando..." : "Salvar animal"}
             </button>
             <button
               type="button"
-              onClick={() => setShowForm(false)}
+              onClick={() => setMostrarForm(false)}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-ink"
             >
               Cancelar
@@ -87,19 +243,54 @@ export default function OngAnimals() {
   }
 
   return (
-    <Panel title="Gerenciamento de animais" subtitle="Cadastro e situação dos animais">
+    <Panel title="Gerenciamento de animais" subtitle="Cadastro, edição e situação dos animais da instituição">
+      <input
+        value={busca}
+        onChange={(e) => setBusca(e.target.value)}
+        placeholder="Buscar pelo nome do animal"
+        className="mb-4 w-full rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-ink outline-none focus:border-ong"
+      />
+
+      {carregando && <p className="text-sm text-muted">Carregando animais...</p>}
+      {erroLista && <p className="text-sm text-red-600">{erroLista}</p>}
+      {!carregando && !erroLista && animais.length === 0 && (
+        <p className="text-sm text-muted">Nenhum animal encontrado.</p>
+      )}
+
       <div className="space-y-3">
-        {animals.map((a) => (
+        {animais.map((a) => (
           <Row
             key={a.id}
             title={a.name}
-            subtitle={`${a.speciesTag} · ${a.age} · ${a.size}`}
-            right={<StatusBadge status={a.status} />}
+            subtitle={(a.caracteristicas || []).join(" · ") || "Sem características cadastradas"}
+            right={
+              <div className="flex items-center gap-2">
+                <select
+                  value={a.status}
+                  onChange={(e) => mudarStatus(a, e.target.value)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-ink"
+                >
+                  {STATUS_OPCOES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <StatusBadge status={a.status} />
+                <button
+                  onClick={() => editar(a)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-ink hover:border-ong"
+                >
+                  Editar
+                </button>
+              </div>
+            }
           />
         ))}
       </div>
+
       <button
-        onClick={() => setShowForm(true)}
+        onClick={novoCadastro}
         className="mt-5 rounded-lg bg-ong px-4 py-2 text-sm font-semibold text-white transition hover:bg-ong-dark"
       >
         Cadastrar animal
@@ -111,9 +302,7 @@ export default function OngAnimals() {
 function Field({ label, ...props }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-        {label}
-      </label>
+      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">{label}</label>
       <input
         {...props}
         className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-ong"

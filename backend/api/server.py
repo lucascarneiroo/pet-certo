@@ -361,7 +361,17 @@ class PetCertoHandler(BaseHTTPRequestHandler):
     def _listar_animais(self, query: dict):
         status = query.get("status", [None])[0]
         id_instituicao = query.get("id_instituicao", [None])[0]
-        animais = listar_animais(status=status, id_instituicao=int(id_instituicao) if id_instituicao else None)
+        busca = query.get("busca", [None])[0]
+        # aceita tanto "caracteristicas=A&caracteristicas=B" quanto "caracteristicas=A,B"
+        brutas = query.get("caracteristicas", [])
+        caracteristicas = [t for item in brutas for t in item.split(",") if t]
+        caracteristicas = [t for t in caracteristicas if t in TODAS_AS_TAGS]
+        animais = listar_animais(
+            status=status,
+            id_instituicao=int(id_instituicao) if id_instituicao else None,
+            busca=busca or None,
+            caracteristicas=caracteristicas or None,
+        )
         return [_animal_para_json(a) for a in animais]
 
     def _buscar_animal(self, animal_id: int):

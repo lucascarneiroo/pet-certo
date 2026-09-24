@@ -70,7 +70,12 @@ def criar_animal(id_instituicao: int, nome: str, data_nascimento: Optional[str],
         conn.close()
 
 
-def listar_animais(status: Optional[str] = None, id_instituicao: Optional[int] = None) -> List[Animal]:
+def listar_animais(
+    status: Optional[str] = None,
+    id_instituicao: Optional[int] = None,
+    busca: Optional[str] = None,
+    caracteristicas: Optional[List[str]] = None,
+) -> List[Animal]:
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -81,6 +86,22 @@ def listar_animais(status: Optional[str] = None, id_instituicao: Optional[int] =
             if id_instituicao:
                 filtros.append("a.idInstituicao = %s")
                 valores.append(id_instituicao)
+            if busca:
+                filtros.append("a.nome ILIKE %s")
+                valores.append(f"%{busca}%")
+            if caracteristicas:
+                # o animal precisa ter TODAS as etiquetas selecionadas (filtro combinado)
+                filtros.append(
+                    "a.idAnimal IN ("
+                    "SELECT ac.idAnimal FROM AnimalCaracteristica ac "
+                    "JOIN CaracteristicaAnimal ca ON ca.idCaracteristica = ac.idCaracteristica "
+                    "WHERE ca.nome = ANY(%s) "
+                    "GROUP BY ac.idAnimal "
+                    "HAVING COUNT(DISTINCT ca.nome) = %s"
+                    ")"
+                )
+                valores.append(caracteristicas)
+                valores.append(len(caracteristicas))
             where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
             cur.execute(
                 f"""

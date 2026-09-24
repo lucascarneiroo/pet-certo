@@ -18,7 +18,7 @@ token em `Authorization: Bearer <token>`, obtido no login.
 
 | Método | Rota | Quem pode | Descrição |
 |---|---|---|---|
-| GET | /api/animais?status=&id_instituicao= | qualquer | lista animais (filtros opcionais) |
+| GET | /api/animais?status=&id_instituicao=&busca=&caracteristicas= | qualquer | lista animais (filtros opcionais: status, dono, nome — `busca`, ILIKE — e etiquetas — `caracteristicas`, repetido por valor ou separado por vírgula, combinado com E) |
 | GET | /api/animais/:id | qualquer | detalhe de um animal |
 | POST | /api/animais | instituição/admin | cadastra animal com etiquetas |
 | PUT | /api/animais/:id | dono do animal/admin | atualiza dados/etiquetas/status |
