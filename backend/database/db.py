@@ -1,6 +1,18 @@
 """
 Conexão com o PostgreSQL e inicialização do banco de dados.
 
+Usa o pg8000 (driver de PostgreSQL escrito inteiramente em Python, sem
+nenhuma extensão compilada) em vez do psycopg2. Motivo: em máquinas
+Windows com o Smart App Control ativado, o arquivo .pyd compilado do
+psycopg2 é bloqueado por não ser reconhecido como um binário confiável —
+e, ao contrário do Windows Defender normal, não existe uma forma de
+liberar exceções para o Smart App Control sem reinstalar o Windows. O
+pg8000 evita o problema por completo, por não carregar nenhum binário
+nativo. Para o resto do backend nada muda: get_connection() continua
+devolvendo uma conexão cujo cursor aceita "%s" e cujo fetchone()/
+fetchall() devolvem dicionários (coluna -> valor), exatamente como o
+RealDictCursor do psycopg2 que era usado antes.
+
 As credenciais NUNCA ficam escritas no código. Elas vêm de variáveis de
 ambiente (lidas de um arquivo .env que cada integrante mantém na própria
 máquina e que fica fora do Git). Isso evita expor a senha do banco no
@@ -12,8 +24,7 @@ Variáveis esperadas (ver .env.example):
 import os
 from pathlib import Path
 
-import psycopg2
-import psycopg2.extras
+import pg8000.dbapi as pg8000
 
 BASE_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = BASE_DIR / "schema.sql"
@@ -41,18 +52,66 @@ _carregar_dotenv()
 def _config_conexao() -> dict:
     return {
         "host": os.environ.get("PGHOST", "localhost"),
-        "port": os.environ.get("PGPORT", "5432"),
-        "dbname": os.environ.get("PGDATABASE", "petcerto"),
+        "port": int(os.environ.get("PGPORT", "5432")),
+        "database": os.environ.get("PGDATABASE", "petcerto"),
         "user": os.environ.get("PGUSER", "postgres"),
         "password": os.environ.get("PGPASSWORD", ""),
     }
 
 
+class _CursorDicionario:
+    """Envolve o cursor do pg8000 para que fetchone()/fetchall() devolvam
+    dicionários (coluna em minúsculo -> valor), igual ao RealDictCursor do
+    psycopg2 que o resto do backend já espera."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, sql, params=None):
+        self._cursor.execute(sql, params if params is not None else ())
+        return self
+
+    def _colunas(self):
+        return [d[0] for d in self._cursor.description] if self._cursor.description else []
+
+    def fetchone(self):
+        linha = self._cursor.fetchone()
+        return dict(zip(self._colunas(), linha)) if linha is not None else None
+
+    def fetchall(self):
+        colunas = self._colunas()
+        return [dict(zip(colunas, linha)) for linha in self._cursor.fetchall()]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc_info):
+        self._cursor.close()
+
+
+class _ConexaoDicionario:
+    def __init__(self, conexao):
+        self._conexao = conexao
+
+    def cursor(self):
+        return _CursorDicionario(self._conexao.cursor())
+
+    def commit(self):
+        self._conexao.commit()
+
+    def rollback(self):
+        self._conexao.rollback()
+
+    def close(self):
+        self._conexao.close()
+
+
 def get_connection():
     """Retorna uma conexão nova com o PostgreSQL, com cursores em formato
-    de dicionário (RealDictCursor), equivalente ao sqlite3.Row usado antes."""
-    conn = psycopg2.connect(cursor_factory=psycopg2.extras.RealDictCursor, **_config_conexao())
-    return conn
+    de dicionário (equivalente ao RealDictCursor do psycopg2 / sqlite3.Row
+    usado antes)."""
+    conexao = pg8000.connect(**_config_conexao())
+    return _ConexaoDicionario(conexao)
 
 
 def init_db() -> None:
