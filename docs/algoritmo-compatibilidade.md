@@ -67,7 +67,7 @@ fixas (`random.seed(42)`) para reprodutibilidade, e o resultado numérico é
 conferido entre elas (`assert diferenca_max < 1e-9`) — ou seja, o ganho de
 desempenho não vem às custas de precisão.
 
-### Resultado real medido (rodando `python3 matching/benchmark.py`)
+### Resultado real medido (rodando `python3 -m matching.benchmark`, de dentro de `backend/`)
 
 ```
 === 50 adotantes x 50 animais (2500 pares) ===
@@ -99,3 +99,30 @@ adotante propõe, em ordem de compatibilidade decrescente, até que ninguém
 mais tenha proposta pendente. O resultado é estável — não existe um par
 (adotante, animal) fora do pareamento final que prefira mutuamente trocar
 de parceiro.
+
+## Testes (RNF25)
+
+`backend/scripts/teste_compatibilidade.py` testa o módulo de
+compatibilidade isoladamente (sem precisar do servidor rodando), com
+diferentes combinações de perfil de adotante e características de
+animal:
+
+- perfil totalmente compatível gera score alto, perfil totalmente
+  incompatível gera score baixo;
+- adotante sem histórico (cold start) recebe um score neutro, entre os
+  dois extremos acima;
+- cada categoria (porte, energia, espaço, espécie, experiência), quando
+  deixa de bater sozinha, reduz o score — testado uma de cada vez;
+- características booleanas (ex.: conviver com crianças) pontuam mais
+  quando adotante e animal concordam;
+- animal sem nenhuma característica cadastrada não quebra o cálculo;
+- a implementação vetorizada bate com a ingênua também neste conjunto
+  fixo de perfis (o `benchmark.py` já cobre isso com combinações
+  aleatórias; aqui é determinístico);
+- o pareamento gerado pelo Gale-Shapley é conferido como estável de
+  verdade (nenhum par fora dele prefere mutuamente trocar).
+
+```bash
+cd backend
+python -m scripts.teste_compatibilidade
+```

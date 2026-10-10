@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Panel, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
-import { listarAnimais, listarTagsPadrao } from "../../services/api";
+import { getUsuario, listarAnimais, listarRecomendacoes, listarTagsPadrao } from "../../services/api";
 
 // categorias de etiquetas oferecidas como filtro rápido nesta tela
 const CATEGORIAS_FILTRO = ["Espécie", "Porte", "Energia", "Espaço"];
@@ -22,6 +22,7 @@ function agruparTagsDeFiltro(tags) {
 
 export default function AdopterAnimals() {
   const navigate = useNavigate();
+  const usuario = getUsuario();
   const [query, setQuery] = useState("");
   const [filtros, setFiltros] = useState({}); // categoria -> etiqueta selecionada
   const [tagsDisponiveis, setTagsDisponiveis] = useState([]);
@@ -29,10 +30,24 @@ export default function AdopterAnimals() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
 
+  const [recomendados, setRecomendados] = useState([]);
+  const [carregandoRecs, setCarregandoRecs] = useState(false);
+  const [erroRecs, setErroRecs] = useState("");
+
   useEffect(() => {
     listarTagsPadrao()
       .then(setTagsDisponiveis)
       .catch(() => setTagsDisponiveis([]));
+  }, []);
+
+  useEffect(() => {
+    if (!usuario || usuario.perfil !== "adotante") return;
+    setCarregandoRecs(true);
+    listarRecomendacoes()
+      .then(setRecomendados)
+      .catch((err) => setErroRecs(err.message))
+      .finally(() => setCarregandoRecs(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -52,10 +67,43 @@ export default function AdopterAnimals() {
   }, [query, filtros]);
 
   const categoriasDeFiltro = useMemo(() => agruparTagsDeFiltro(tagsDisponiveis), [tagsDisponiveis]);
-  const ranked = [...animais].sort((a, b) => (b.compat || 0) - (a.compat || 0));
 
   return (
     <>
+      {usuario && usuario.perfil === "adotante" && (
+        <Panel
+          title="Recomendados para você"
+          subtitle="Ranking gerado pelo núcleo de compatibilidade, a partir dos animais que você favoritou"
+        >
+          {carregandoRecs && <p className="text-sm text-muted">Calculando recomendações...</p>}
+          {erroRecs && <p className="text-sm text-red-600">{erroRecs}</p>}
+          {!carregandoRecs && !erroRecs && recomendados.length === 0 && (
+            <p className="text-sm text-muted">
+              Favorite alguns animais para receber recomendações personalizadas.
+            </p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {recomendados.map((a, i) => (
+              <button
+                key={a.id}
+                onClick={() => navigate(`/adotante/animais/${a.id}`)}
+                className="rounded-xl border border-slate-100 p-4 text-left transition hover:border-adopter hover:shadow-sm"
+              >
+                <p className="text-sm font-bold text-ink">
+                  #{i + 1} · {a.name}
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  {(a.caracteristicas || []).slice(0, 2).join(" · ") || a.institution}
+                </p>
+                <span className="mt-2 inline-flex items-center rounded-full bg-[#E4F3E9] px-3 py-1 text-xs font-semibold text-[#2F7A50]">
+                  {a.compat}% compatível
+                </span>
+              </button>
+            ))}
+          </div>
+        </Panel>
+      )}
+
       <Panel title="Encontre seu novo melhor amigo" subtitle="Busca e filtros vindos do backend">
         <input
           value={query}
@@ -107,11 +155,6 @@ export default function AdopterAnimals() {
               <p className="mt-0.5 text-xs text-muted">
                 {(a.caracteristicas || []).slice(0, 2).join(" · ") || a.institution}
               </p>
-              {typeof a.compat === "number" && (
-                <span className="mt-2 inline-flex items-center rounded-full bg-[#E4F3E9] px-3 py-1 text-xs font-semibold text-[#2F7A50]">
-                  {a.compat}% compatível
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -119,7 +162,7 @@ export default function AdopterAnimals() {
 
       <Panel title="Todos os animais disponíveis" subtitle="Lista completa vinda do backend, já com os filtros acima">
         <div className="space-y-3">
-          {ranked.map((a, i) => (
+          {animais.map((a, i) => (
             <Row
               key={a.id}
               title={`${i + 1}. ${a.name}`}

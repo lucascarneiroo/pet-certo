@@ -55,7 +55,15 @@ python scripts/teste_fluxo_adocao.py    # fluxo completo: cadastro, login,
                                          # animal, favoritar, manifestação,
                                          # aprovação, visita, documentos,
                                          # conclusão — inclui casos de erro
-python matching/benchmark.py            # benchmark do algoritmo de compatibilidade
+
+# não precisam do servidor rodando (rodar de dentro de backend/, com -m):
+python -m scripts.teste_compatibilidade # núcleo de compatibilidade: diferentes
+                                         # combinações de perfil de adotante x
+                                         # animal, casos-limite e estabilidade
+                                         # do pareamento (Gale-Shapley)
+python -m matching.benchmark            # benchmark de desempenho do algoritmo
+                                         # de compatibilidade (ingênua vs.
+                                         # vetorizada vs. paralela)
 ```
 
 ## Estrutura

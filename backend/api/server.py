@@ -23,6 +23,7 @@ from database.adocao_repository import (
     agendar_visita,
     aprovar_manifestacao,
     atualizar_visita,
+    buscar_manifestacao_por_id,
     cancelar_processo,
     concluir_processo,
     criar_horario_visita,
@@ -56,7 +57,7 @@ from database.interacoes_repository import (
     salvar_compatibilidade,
 )
 from database.tags_padrao import TODAS_AS_TAGS
-from matching.compatibilidade import calcular_matriz_scores, vetor_de_preferencia, vetor_do_animal
+from matching.compatibilidade import calcular_matriz_scores, fatores_por_criterio, vetor_de_preferencia, vetor_do_animal
 
 ROTA_ANIMAL_COM_ID = re.compile(r"^/api/animais/(\d+)$")
 ROTA_ANIMAL_FAVORITAR = re.compile(r"^/api/animais/(\d+)/favoritar$")
@@ -64,6 +65,7 @@ ROTA_ANIMAL_COMPATIBILIDADE = re.compile(r"^/api/animais/(\d+)/compatibilidade$"
 ROTA_MANIFESTACAO_COM_ID = re.compile(r"^/api/manifestacoes/(\d+)$")
 ROTA_MANIFESTACAO_APROVAR = re.compile(r"^/api/manifestacoes/(\d+)/aprovar$")
 ROTA_MANIFESTACAO_RECUSAR = re.compile(r"^/api/manifestacoes/(\d+)/recusar$")
+ROTA_MANIFESTACAO_COMPATIBILIDADE = re.compile(r"^/api/manifestacoes/(\d+)/compatibilidade$")
 ROTA_PROCESSO_COM_ID = re.compile(r"^/api/processos/(\d+)$")
 ROTA_PROCESSO_ETAPAS = re.compile(r"^/api/processos/(\d+)/etapas$")
 ROTA_PROCESSO_ETAPA_COM_ID = re.compile(r"^/api/processos/(\d+)/etapas/(\d+)$")
@@ -275,6 +277,9 @@ class PetCertoHandler(BaseHTTPRequestHandler):
         m = ROTA_MANIFESTACAO_RECUSAR.match(caminho)
         if m and metodo == "POST":
             return self._recusar_manifestacao(int(m.group(1)))
+        m = ROTA_MANIFESTACAO_COMPATIBILIDADE.match(caminho)
+        if m and metodo == "GET":
+            return self._compatibilidade_da_manifestacao(int(m.group(1)))
 
         if caminho == "/api/processos" and metodo == "GET":
             return self._listar_processos(query)
@@ -435,21 +440,28 @@ class PetCertoHandler(BaseHTTPRequestHandler):
         usuario = self._usuario_autenticado()
         return listar_favoritos(usuario.id)
 
+    def _preferencia_do_adotante(self, id_adotante: int):
+        """Vetor de preferência aprendido a partir dos animais que o
+        adotante já favoritou — reaproveitado por recomendações e pelos
+        dois endpoints de compatibilidade (o do próprio adotante e o que a
+        instituição usa para analisar uma manifestação)."""
+        favoritados = {f["id_animal"] for f in listar_favoritos(id_adotante)}
+        todos = listar_animais()
+        historico_tags = [a.caracteristicas for a in todos if a.id in favoritados]
+        return vetor_de_preferencia(historico_tags)
+
     def _listar_recomendacoes(self):
         usuario = self._usuario_autenticado()
         if not usuario.eh_adotante:
             raise ErroHTTP(403, "Apenas adotantes têm recomendações.")
-        historico = [f["nome_animal"] for f in []]  # placeholder não usado
-        animais_disponiveis = [a for a in listar_animais(status="Disponível")]
+        animais_disponiveis = listar_animais(status="Disponível")
         favoritados = {f["id_animal"] for f in listar_favoritos(usuario.id)}
-        historico_tags = [a.caracteristicas for a in animais_disponiveis if a.id in favoritados]
-        preferencia = vetor_de_preferencia(historico_tags)
+        preferencia = self._preferencia_do_adotante(usuario.id)
         candidatos = [a for a in animais_disponiveis if a.id not in favoritados]
         if not candidatos:
             return []
         from matching.compatibilidade import matriz_dos_animais
         A = matriz_dos_animais([a.caracteristicas for a in candidatos])
-        import numpy as np
         scores = calcular_matriz_scores(preferencia.reshape(1, -1), A)[0]
         ordenado = sorted(zip(candidatos, scores), key=lambda par: -par[1])[:10]
         resultado = []
@@ -465,15 +477,36 @@ class PetCertoHandler(BaseHTTPRequestHandler):
         animal = buscar_animal_por_id(animal_id)
         if animal is None:
             raise ErroHTTP(404, "Animal não encontrado.")
-        favoritados = {f["id_animal"] for f in listar_favoritos(usuario.id)}
-        todos = listar_animais()
-        historico_tags = [a.caracteristicas for a in todos if a.id in favoritados]
-        preferencia = vetor_de_preferencia(historico_tags)
+        preferencia = self._preferencia_do_adotante(usuario.id)
         vetor_animal = vetor_do_animal(animal.caracteristicas)
         score = float(calcular_matriz_scores(preferencia.reshape(1, -1), vetor_animal.reshape(1, -1))[0, 0])
-        fatores = {"caracteristicas_do_animal": animal.caracteristicas, "baseado_em_favoritos": len(historico_tags)}
+        fatores = fatores_por_criterio(preferencia, animal.caracteristicas)
         salvar_compatibilidade(usuario.id, animal_id, round(score), fatores)
         return {"animal_id": animal_id, "score": round(score, 1), "fatores": fatores}
+
+    def _compatibilidade_da_manifestacao(self, manifestacao_id: int):
+        """Mesmo cálculo de _compatibilidade, mas visto pela instituição: a
+        preferência é calculada para o ADOTANTE da manifestação (não para
+        quem está chamando), para a instituição analisar a solicitação."""
+        usuario = self._usuario_autenticado()
+        self._exigir_instituicao_ou_admin(usuario)
+        self._exigir_dono_da_manifestacao_ou_admin(usuario, manifestacao_id)
+        manifestacao = buscar_manifestacao_por_id(manifestacao_id)
+        if manifestacao is None:
+            raise ErroHTTP(404, "Manifestação não encontrada.")
+        animal = buscar_animal_por_id(manifestacao.id_animal)
+        if animal is None:
+            raise ErroHTTP(404, "Animal não encontrado.")
+        preferencia = self._preferencia_do_adotante(manifestacao.id_adotante)
+        vetor_animal = vetor_do_animal(animal.caracteristicas)
+        score = float(calcular_matriz_scores(preferencia.reshape(1, -1), vetor_animal.reshape(1, -1))[0, 0])
+        fatores = fatores_por_criterio(preferencia, animal.caracteristicas)
+        return {
+            "animal_id": animal.id,
+            "id_adotante": manifestacao.id_adotante,
+            "score": round(score, 1),
+            "fatores": fatores,
+        }
 
     # -------------------------------------------------------- fluxo de adoção
 

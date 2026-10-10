@@ -167,6 +167,10 @@ export async function recusarManifestacao(id) {
   return chamarApi(`/api/manifestacoes/${id}/recusar`, { metodo: "POST" });
 }
 
+export async function buscarCompatibilidadeDaManifestacao(idManifestacao) {
+  return chamarApi(`/api/manifestacoes/${idManifestacao}/compatibilidade`);
+}
+
 export async function listarProcessos() {
   return chamarApi("/api/processos");
 }

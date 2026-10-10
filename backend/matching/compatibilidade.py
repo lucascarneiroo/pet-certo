@@ -30,6 +30,13 @@ PESOS_BOOLEANO = {
     "Convive com Outros Pets": 0.10,
     "Necessidades Especiais": 0.05,
 }
+NOME_CATEGORIA = {
+    "especie": "Espécie",
+    "porte": "Porte",
+    "energia": "Energia",
+    "espaco": "Espaço",
+    "experiencia": "Experiência",
+}
 
 # vetor de pesos por tag (0 fora das categorias ordinais/booleanas relevantes)
 _PESO_ORDINAL = np.zeros(DIMENSAO)
@@ -93,6 +100,40 @@ def vetor_de_preferencia(historico_de_tags: List[List[str]]) -> np.ndarray:
 
 def matriz_de_preferencias(historicos: List[List[List[str]]]) -> np.ndarray:
     return np.array([vetor_de_preferencia(h) for h in historicos]) if historicos else np.zeros((0, DIMENSAO))
+
+
+def fatores_por_criterio(preferencia: np.ndarray, tags_do_animal: List[str]) -> List[dict]:
+    """Decompõe o score em um fator por critério (RF16: apresentar os
+    principais fatores que contribuíram para a compatibilidade). Para cada
+    categoria ordinal, mostra o quanto a preferência aprendida do adotante
+    favorece a característica que o animal realmente tem; para cada
+    característica booleana, o quanto favorece a presença/ausência dela.
+    Ordenado do critério de maior peso para o de menor peso."""
+    fatores = []
+    for categoria, tags in CATEGORIAS_PADRAO.items():
+        tag_do_animal = next((t for t in tags_do_animal if t in tags), None)
+        if tag_do_animal is None:
+            continue
+        afinidade_pct = float(preferencia[_INDICE_DA_TAG[tag_do_animal]]) * 100
+        fatores.append({
+            "criterio": NOME_CATEGORIA[categoria],
+            "valor_do_animal": tag_do_animal.split(": ", 1)[-1],
+            "afinidade_pct": round(afinidade_pct, 1),
+            "peso_pct": round(PESOS_CATEGORIA[categoria] * 100, 1),
+        })
+    for tag in TAGS_BOOLEANAS:
+        idx = _INDICE_DA_TAG[tag]
+        animal_tem = tag in tags_do_animal
+        p = float(preferencia[idx])
+        afinidade_pct = (p if animal_tem else (1 - p)) * 100
+        fatores.append({
+            "criterio": tag,
+            "valor_do_animal": "Sim" if animal_tem else "Não",
+            "afinidade_pct": round(afinidade_pct, 1),
+            "peso_pct": round(PESOS_BOOLEANO[tag] * 100, 1),
+        })
+    fatores.sort(key=lambda f: -f["peso_pct"])
+    return fatores
 
 
 # ------------------------------------------------------------- Cálculo do score

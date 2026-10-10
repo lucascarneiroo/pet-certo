@@ -35,6 +35,7 @@ token em `Authorization: Bearer <token>`, obtido no login.
 | GET/POST | /api/manifestacoes | adotante/instituição/admin | listar / manifestar interesse |
 | POST | /api/manifestacoes/:id/aprovar | instituição dona/admin | cria o processo de adoção |
 | POST | /api/manifestacoes/:id/recusar | instituição dona/admin | recusa a manifestação |
+| GET | /api/manifestacoes/:id/compatibilidade | instituição dona/admin | score e fatores de compatibilidade do adotante da manifestação com o animal (mesmo cálculo de `/api/animais/:id/compatibilidade`, visto pela instituição) |
 | GET | /api/processos | adotante/instituição/admin | lista processos |
 | GET | /api/processos/:id/etapas | autenticado | lista as 4 etapas do processo |
 | PUT | /api/processos/:id/etapas/:idEtapa | instituição dona/admin | atualiza status da etapa |
