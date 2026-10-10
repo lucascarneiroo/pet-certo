@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Panel, ProgressBar } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
-import { buscarAnimal, buscarCompatibilidade, getUsuario, manifestarInteresse } from "../../services/api";
+import {
+  buscarAnimal,
+  buscarCompatibilidade,
+  desfavoritarAnimal,
+  favoritarAnimal,
+  getUsuario,
+  listarFavoritos,
+  manifestarInteresse,
+} from "../../services/api";
 
 export default function AnimalDetail() {
   const { id } = useParams();
@@ -20,6 +28,10 @@ export default function AnimalDetail() {
   const [erroInteresse, setErroInteresse] = useState("");
   const [enviado, setEnviado] = useState(false);
 
+  const [favoritado, setFavoritado] = useState(false);
+  const [alterandoFavorito, setAlterandoFavorito] = useState(false);
+  const [erroFavorito, setErroFavorito] = useState("");
+
   useEffect(() => {
     setCarregando(true);
     setErro("");
@@ -29,12 +41,44 @@ export default function AnimalDetail() {
       .finally(() => setCarregando(false));
   }, [id]);
 
-  useEffect(() => {
+  function recarregarCompatibilidade() {
     if (!usuario || usuario.perfil !== "adotante") return;
     buscarCompatibilidade(id)
       .then(setCompat)
       .catch((err) => setErroCompat(err.message));
+  }
+
+  useEffect(() => {
+    recarregarCompatibilidade();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, usuario]);
+
+  useEffect(() => {
+    if (!usuario || usuario.perfil !== "adotante") return;
+    listarFavoritos()
+      .then((favoritos) => setFavoritado(favoritos.some((f) => f.id_animal === Number(id))))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, usuario]);
+
+  async function handleFavoritar() {
+    setErroFavorito("");
+    setAlterandoFavorito(true);
+    try {
+      if (favoritado) {
+        await desfavoritarAnimal(Number(id));
+        setFavoritado(false);
+      } else {
+        await favoritarAnimal(Number(id));
+        setFavoritado(true);
+      }
+      recarregarCompatibilidade(); // favoritar muda a preferência aprendida do adotante
+    } catch (err) {
+      setErroFavorito(err.message);
+    } finally {
+      setAlterandoFavorito(false);
+    }
+  }
 
   async function handleManifestarInteresse() {
     setErroInteresse("");
@@ -87,8 +131,25 @@ export default function AnimalDetail() {
               <p className="mt-1 text-sm text-muted">{animal.institution}</p>
             </div>
 
+            {erroFavorito && (
+              <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erroFavorito}</p>
+            )}
             {erroInteresse && (
               <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erroInteresse}</p>
+            )}
+
+            {usuario && usuario.perfil === "adotante" && (
+              <button
+                onClick={handleFavoritar}
+                disabled={alterandoFavorito}
+                className={`mt-4 mr-3 rounded-lg border px-4 py-2 text-sm font-semibold transition disabled:opacity-60 ${
+                  favoritado
+                    ? "border-adopter bg-adopter-soft text-adopter"
+                    : "border-slate-200 text-ink hover:border-adopter"
+                }`}
+              >
+                {favoritado ? "★ Favoritado" : "☆ Favoritar"}
+              </button>
             )}
 
             {!usuario ? (
