@@ -201,11 +201,23 @@ export async function agendarVisita(idProcesso, idHorario) {
   return chamarApi(`/api/processos/${idProcesso}/visitas`, { metodo: "POST", corpo: { id_horario: idHorario } });
 }
 
+export async function listarVisitas(idProcesso) {
+  return chamarApi(`/api/processos/${idProcesso}/visitas`);
+}
+
+export async function atualizarVisita(idVisita, status, resultado) {
+  return chamarApi(`/api/visitas/${idVisita}`, { metodo: "PUT", corpo: { status, resultado } });
+}
+
 export async function enviarDocumento(idProcesso, nome, caminhoArquivo) {
   return chamarApi(`/api/processos/${idProcesso}/documentos`, {
     metodo: "POST",
     corpo: { nome, caminho_arquivo: caminhoArquivo },
   });
+}
+
+export async function listarDocumentos(idProcesso) {
+  return chamarApi(`/api/processos/${idProcesso}/documentos`);
 }
 
 export async function listarHistoricoProcesso(idProcesso) {

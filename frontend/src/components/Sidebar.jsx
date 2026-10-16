@@ -1,6 +1,14 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { logout } from "../services/api";
 
 export default function Sidebar({ base, roleLabel, items, theme }) {
+  const navigate = useNavigate();
+
+  function handleSair() {
+    logout();
+    navigate("/", { replace: true });
+  }
+
   return (
     <aside
       className="flex w-56 shrink-0 flex-col gap-6 rounded-2xl p-5 text-white"
@@ -31,9 +39,9 @@ export default function Sidebar({ base, roleLabel, items, theme }) {
         ))}
       </nav>
 
-      <NavLink to="/" className="text-xs text-white/50 hover:text-white/80">
+      <button onClick={handleSair} className="text-left text-xs text-white/50 hover:text-white/80">
         ← Sair do painel
-      </NavLink>
+      </button>
     </aside>
   );
 }

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import RoleLayout from "./layouts/RoleLayout";
+import RequireRole from "./components/RequireRole";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -63,14 +64,16 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <RoleLayout
-              base="/admin"
-              roleLabel="Administrador"
-              roleTitle="Perfil Administrador"
-              roleDescription="Governança de usuários, instituições, animais, processos, permissões e registros."
-              items={ADMIN_ITEMS}
-              theme={{ DEFAULT: "#3E6B52" }}
-            />
+            <RequireRole perfil="administrador">
+              <RoleLayout
+                base="/admin"
+                roleLabel="Administrador"
+                roleTitle="Perfil Administrador"
+                roleDescription="Governança de usuários, instituições, animais, processos, permissões e registros."
+                items={ADMIN_ITEMS}
+                theme={{ DEFAULT: "#3E6B52" }}
+              />
+            </RequireRole>
           }
         >
           <Route index element={<AdminDashboard />} />
@@ -82,14 +85,16 @@ export default function App() {
         <Route
           path="/instituicao"
           element={
-            <RoleLayout
-              base="/instituicao"
-              roleLabel="Instituição / ONG"
-              roleTitle="Perfil Instituição / ONG"
-              roleDescription="Operação diária do Instituto Amor Animal, com análise, agenda e indicadores."
-              items={ONG_ITEMS}
-              theme={{ DEFAULT: "#33566F" }}
-            />
+            <RequireRole perfil="instituicao">
+              <RoleLayout
+                base="/instituicao"
+                roleLabel="Instituição / ONG"
+                roleTitle="Perfil Instituição / ONG"
+                roleDescription="Operação diária da instituição, com análise, agenda e indicadores."
+                items={ONG_ITEMS}
+                theme={{ DEFAULT: "#33566F" }}
+              />
+            </RequireRole>
           }
         >
           <Route index element={<OngDashboard />} />
@@ -103,14 +108,16 @@ export default function App() {
         <Route
           path="/adotante"
           element={
-            <RoleLayout
-              base="/adotante"
-              roleLabel="Adotante"
-              roleTitle="Perfil Adotante"
-              roleDescription="Descoberta, compatibilidade e acompanhamento completo da adoção."
-              items={ADOPTER_ITEMS}
-              theme={{ DEFAULT: "#6A4C8C" }}
-            />
+            <RequireRole perfil="adotante">
+              <RoleLayout
+                base="/adotante"
+                roleLabel="Adotante"
+                roleTitle="Perfil Adotante"
+                roleDescription="Descoberta, compatibilidade e acompanhamento completo da adoção."
+                items={ADOPTER_ITEMS}
+                theme={{ DEFAULT: "#6A4C8C" }}
+              />
+            </RequireRole>
           }
         >
           <Route index element={<AdopterDashboard />} />
