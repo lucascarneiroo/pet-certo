@@ -24,6 +24,12 @@ em `database/schema.sql` — o backend só o executa e trabalha em cima dele.
    arquivo `.env` nunca deve ser commitado** (já está no `.gitignore`) —
    cada pessoa do grupo usa a própria senha local, e a senha não deve ser
    compartilhada em nenhum lugar do repositório, chat ou print de tela.
+
+   Se quiser um administrador criado automaticamente, preencha também
+   `ADMIN_EMAIL` e `ADMIN_SENHA` no mesmo `.env`, com credenciais à sua
+   escolha. **Não existe mais um login de admin fixo no código** — sem
+   essas duas variáveis, nenhum admin é criado sozinho (veja a seção
+   "Rodando" abaixo).
 3. Crie o banco de dados (uma vez):
    ```bash
    createdb petcerto
@@ -37,12 +43,13 @@ em `database/schema.sql` — o backend só o executa e trabalha em cima dele.
 python main.py
 ```
 
-Na primeira execução, o backend cria todas as tabelas do schema, popula o
-vocabulário padrão de etiquetas de características (`GET /api/tags`) e
-cria um administrador padrão:
-
-- login: `admin@petcerto.com`
-- senha: `admin123`
+Na primeira execução, o backend cria todas as tabelas do schema e popula o
+vocabulário padrão de etiquetas de características (`GET /api/tags`). Se
+`ADMIN_EMAIL` e `ADMIN_SENHA` estiverem definidos no `.env`, também cria um
+administrador com essas credenciais — sem elas, nenhum admin é criado
+automaticamente, e é preciso promover um usuário manualmente no banco
+(`INSERT INTO Administrador (idUsuario, permissoes) VALUES (<id>, 'total')`
+para um usuário já cadastrado como adotante/instituição).
 
 A API sobe em `http://localhost:8000`.
 

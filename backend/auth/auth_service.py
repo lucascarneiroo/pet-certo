@@ -7,10 +7,12 @@ O perfil de um usuário é, portanto, "em qual tabela filha ele tem uma
 linha" — por isso cadastrar um usuário sempre significa duas inserções:
 uma em Usuario e outra na tabela do perfil escolhido.
 """
-import hashlib
+import hashlib  # só para verificar hashes antigos (ver _verificar_senha)
 import os
 import re
 from typing import Optional
+
+import bcrypt
 
 from database.db import get_connection
 from models.usuario import Usuario
@@ -31,19 +33,24 @@ class CredenciaisInvalidasError(Exception):
     pass
 
 
-def gerar_hash_senha(senha: str, salt: Optional[str] = None) -> tuple:
-    salt = salt or os.urandom(16).hex()
-    hash_senha = hashlib.sha256((salt + senha).encode("utf-8")).hexdigest()
-    return hash_senha, salt
+def gerar_hash_senha(senha: str) -> str:
+    """Hash de senha com bcrypt: função de custo adaptativo (ao contrário de
+    um hash rápido como SHA-256), o que torna ataques de força bruta e
+    rainbow table muito mais caros. O salt já fica embutido no hash gerado
+    (prefixo "$2b$..."), não precisa de uma coluna separada para ele."""
+    return bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def _verificar_senha(senha_informada: str, senha_armazenada: str) -> bool:
-    # senha_armazenada é guardada no formato "salt$hash" dentro da coluna Usuario.senha
-    if "$" not in senha_armazenada:
-        return False
-    salt, hash_esperado = senha_armazenada.split("$", 1)
-    hash_calculado, _ = gerar_hash_senha(senha_informada, salt)
-    return hash_calculado == hash_esperado
+    if senha_armazenada.startswith(("$2a$", "$2b$", "$2y$")):
+        return bcrypt.checkpw(senha_informada.encode("utf-8"), senha_armazenada.encode("utf-8"))
+    # formato antigo (salt$sha256), de contas criadas antes da migração para
+    # bcrypt — mantido só para não invalidar logins já existentes.
+    if "$" in senha_armazenada:
+        salt, hash_esperado = senha_armazenada.split("$", 1)
+        hash_calculado = hashlib.sha256((salt + senha_informada).encode("utf-8")).hexdigest()
+        return hash_calculado == hash_esperado
+    return False
 
 
 def _validar_email(email: str) -> None:
@@ -109,10 +116,10 @@ def criar_usuario(
             if cur.fetchone():
                 raise EmailJaCadastradoError("Já existe uma conta com este e-mail.")
 
-            senha_hash, salt = gerar_hash_senha(senha)
+            senha_hash = gerar_hash_senha(senha)
             cur.execute(
                 "INSERT INTO Usuario (login, senha, nomeCompleto) VALUES (%s, %s, %s) RETURNING idUsuario",
-                (email, f"{salt}${senha_hash}", nome.strip()),
+                (email, senha_hash, nome.strip()),
             )
             novo_id = cur.fetchone()["idusuario"]
 

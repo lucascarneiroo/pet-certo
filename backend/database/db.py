@@ -147,21 +147,36 @@ def _seed_caracteristicas_padrao() -> None:
 
 
 def _seed_admin_padrao() -> None:
-    """Garante que exista pelo menos um administrador para acessar o sistema
-    logo após clonar o projeto (login: admin@petcerto.com / senha: admin123)."""
+    """Cria um administrador inicial, mas só se ADMIN_EMAIL e ADMIN_SENHA
+    estiverem definidos no .env de quem está rodando — nunca um e-mail e
+    senha fixos no código-fonte. Sem essas variáveis, nenhum admin é criado
+    automaticamente (veja backend/README.md para criar um manualmente)."""
+    email_admin = os.environ.get("ADMIN_EMAIL")
+    senha_admin = os.environ.get("ADMIN_SENHA")
+    if not email_admin or not senha_admin:
+        print(
+            "Nenhum administrador padrão criado: defina ADMIN_EMAIL e ADMIN_SENHA "
+            "no seu .env para criar um automaticamente na primeira execução "
+            "(veja backend/.env.example)."
+        )
+        return
+    if len(senha_admin) < 6:
+        print("ADMIN_SENHA precisa ter pelo menos 6 caracteres; administrador padrão não foi criado.")
+        return
+
     from auth.auth_service import gerar_hash_senha
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT idUsuario FROM Usuario WHERE login = %s", ("admin@petcerto.com",))
+            cur.execute("SELECT idUsuario FROM Usuario WHERE login = %s", (email_admin,))
             if cur.fetchone():
                 return
-            senha_hash, salt = gerar_hash_senha("admin123")
+            senha_hash = gerar_hash_senha(senha_admin)
             cur.execute(
                 "INSERT INTO Usuario (login, senha, nomeCompleto) VALUES (%s, %s, %s) "
                 "RETURNING idUsuario",
-                ("admin@petcerto.com", f"{salt}${senha_hash}", "Administrador Padrão"),
+                (email_admin, senha_hash, "Administrador Padrão"),
             )
             novo_id = cur.fetchone()["idusuario"]
             cur.execute(
