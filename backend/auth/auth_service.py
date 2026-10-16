@@ -189,6 +189,36 @@ def buscar_usuario_por_id(usuario_id: int) -> Optional[Usuario]:
         conn.close()
 
 
+def listar_usuarios() -> list:
+    """Lista todos os usuários (qualquer perfil), para a tela de gestão do
+    administrador. Reaproveita o mesmo formato de linha de _buscar_por_login_sql,
+    sem o WHERE."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT u.idUsuario, u.login, u.nomeCompleto,
+                       a.cpf, a.endereco, a.scorePerfil,
+                       i.cnpj, i.localizacao, i.infoAbrigo,
+                       ad.permissoes, ad.infoAdmin,
+                       CASE
+                           WHEN a.idUsuario IS NOT NULL THEN 'adotante'
+                           WHEN i.idUsuario IS NOT NULL THEN 'instituicao'
+                           WHEN ad.idUsuario IS NOT NULL THEN 'administrador'
+                       END AS perfil
+                FROM Usuario u
+                LEFT JOIN Adotante a ON a.idUsuario = u.idUsuario
+                LEFT JOIN Instituicao i ON i.idUsuario = u.idUsuario
+                LEFT JOIN Administrador ad ON ad.idUsuario = u.idUsuario
+                ORDER BY u.nomeCompleto
+                """
+            )
+            return [Usuario.from_row(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def listar_instituicoes() -> list:
     conn = get_connection()
     try:

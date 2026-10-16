@@ -1,24 +1,40 @@
+import { useEffect, useState } from "react";
 import { Panel, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
-import { users } from "../../data/mockData";
+import { listarUsuarios } from "../../services/api";
+
+const ROTULO_PERFIL = { adotante: "Adotante", instituicao: "Instituição", administrador: "Administrador" };
+const COR_PERFIL = { adotante: "purple", instituicao: "blue", administrador: "green" };
 
 export default function AdminUsers() {
+  const [usuarios, setUsuarios] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    listarUsuarios()
+      .then(setUsuarios)
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }, []);
+
   return (
-    <Panel title="Gerenciamento de usuários" subtitle="Adotantes, equipes e permissões">
+    <Panel title="Gerenciamento de usuários" subtitle={`${usuarios.length} usuários cadastrados`}>
+      {carregando && <p className="text-sm text-muted">Carregando...</p>}
+      {erro && <p className="text-sm text-red-600">{erro}</p>}
+      {!carregando && !erro && usuarios.length === 0 && (
+        <p className="text-sm text-muted">Nenhum usuário cadastrado ainda.</p>
+      )}
       <div className="space-y-3">
-        {users.map((u) => (
+        {usuarios.map((u) => (
           <Row
             key={u.id}
-            title={`${u.name} · ${u.role} · ${u.email}`}
-            right={<StatusBadge status={u.status} />}
+            title={u.nome}
+            subtitle={u.email}
+            right={<StatusBadge status={ROTULO_PERFIL[u.perfil] || u.perfil} tone={COR_PERFIL[u.perfil]} />}
           />
         ))}
-        <Row title="Conta sinalizada · tentativas inválidas" right={<StatusBadge status="Bloqueado" />} />
       </div>
-
-      <button className="mt-5 rounded-lg bg-admin px-4 py-2 text-sm font-semibold text-white transition hover:bg-admin-dark">
-        Gerenciar permissões
-      </button>
     </Panel>
   );
 }

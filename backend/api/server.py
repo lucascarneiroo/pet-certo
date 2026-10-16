@@ -16,6 +16,7 @@ from auth.auth_service import (
     buscar_usuario_por_id,
     criar_usuario,
     listar_instituicoes,
+    listar_usuarios,
 )
 from auth.session_service import criar_sessao, encerrar_sessao, usuario_id_da_sessao
 from database.adocao_repository import (
@@ -52,6 +53,7 @@ from database.interacoes_repository import (
     favoritar,
     listar_favoritos,
     listar_recomendacoes,
+    listar_registros_admin,
     registrar_acao_admin,
     registrar_recomendacao,
     salvar_compatibilidade,
@@ -227,9 +229,14 @@ class PetCertoHandler(BaseHTTPRequestHandler):
 
         if caminho == "/api/usuarios" and metodo == "POST":
             return self._cadastrar_usuario()
+        if caminho == "/api/usuarios" and metodo == "GET":
+            return self._listar_usuarios()
 
         if caminho == "/api/instituicoes" and metodo == "GET":
             return listar_instituicoes()
+
+        if caminho == "/api/admin/registros" and metodo == "GET":
+            return self._listar_registros_admin()
 
         if caminho == "/api/tags" and metodo == "GET":
             return {"tags": TODAS_AS_TAGS}
@@ -360,6 +367,16 @@ class PetCertoHandler(BaseHTTPRequestHandler):
             info_abrigo=corpo.get("info_abrigo"),
         )
         return 201, _usuario_para_json(usuario)
+
+    def _listar_usuarios(self):
+        usuario = self._usuario_autenticado()
+        self._exigir_admin(usuario)
+        return [_usuario_para_json(u) for u in listar_usuarios()]
+
+    def _listar_registros_admin(self):
+        usuario = self._usuario_autenticado()
+        self._exigir_admin(usuario)
+        return [r.__dict__ for r in listar_registros_admin()]
 
     # -------------------------------------------------------------- animais
 

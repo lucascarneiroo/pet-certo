@@ -11,8 +11,10 @@ token em `Authorization: Bearer <token>`, obtido no login.
 | GET | /api/auth/me | sim | dados do usuário logado |
 | POST | /api/auth/logout | sim | encerra a sessão |
 | POST | /api/usuarios | não | cadastra adotante/instituição/administrador |
+| GET | /api/usuarios | admin | lista todos os usuários (qualquer perfil) |
 | GET | /api/instituicoes | não | lista instituições cadastradas |
 | GET | /api/tags | não | lista as etiquetas padrão de características |
+| GET | /api/admin/registros | admin | lista os últimos 200 registros administrativos |
 
 ## Animais
 

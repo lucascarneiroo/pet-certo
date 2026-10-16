@@ -237,3 +237,13 @@ export async function cancelarProcesso(idProcesso, motivo) {
 export async function listarInstituicoes() {
   return chamarApi("/api/instituicoes", { autenticado: false });
 }
+
+// --------------------------------------------------------------------- Admin
+
+export async function listarUsuarios() {
+  return chamarApi("/api/usuarios");
+}
+
+export async function listarRegistrosAdmin() {
+  return chamarApi("/api/admin/registros");
+}
