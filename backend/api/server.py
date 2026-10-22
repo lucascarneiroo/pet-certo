@@ -436,7 +436,10 @@ class PetCertoHandler(BaseHTTPRequestHandler):
     def _excluir_animal(self, animal_id: int):
         usuario = self._usuario_autenticado()
         self._exigir_admin(usuario)
+        animal = buscar_animal_por_id(animal_id)
         excluir_animal(animal_id)
+        nome_animal = animal.nome if animal else f"id {animal_id}"
+        registrar_acao_admin(usuario.id, "Exclusão de Animal", f"Animal '{nome_animal}' removido da plataforma.")
         return {"ok": True}
 
     # ---------------------------------------------------- favoritos / recomendação

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, ProgressBar, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
 import {
@@ -7,11 +7,15 @@ import {
   listarManifestacoes,
   recusarManifestacao,
 } from "../../services/api";
+import { exportarCsv } from "../../utils/exportarCsv";
+
+const STATUS_MANIFESTACAO = ["Pendente", "Aprovada", "Recusada"];
 
 export default function OngRequests() {
   const [manifestacoes, setManifestacoes] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState("");
 
   const [selecionadaId, setSelecionadaId] = useState(null);
   const [compat, setCompat] = useState(null);
@@ -35,6 +39,31 @@ export default function OngRequests() {
   }, []);
 
   const selecionada = manifestacoes.find((m) => m.id === selecionadaId) || null;
+
+  const manifestacoesFiltradas = useMemo(
+    () => manifestacoes.filter((m) => !statusFiltro || m.status === statusFiltro),
+    [manifestacoes, statusFiltro]
+  );
+
+  function exportar() {
+    exportarCsv(
+      "manifestacoes-de-interesse-pet-certo",
+      [
+        { chave: "id", titulo: "ID" },
+        { chave: "adotante", titulo: "Adotante" },
+        { chave: "animal", titulo: "Animal" },
+        { chave: "status", titulo: "Situação" },
+        { chave: "data", titulo: "Manifestada em" },
+      ],
+      manifestacoesFiltradas.map((m) => ({
+        id: m.id,
+        adotante: m.nome_adotante,
+        animal: m.nome_animal,
+        status: m.status,
+        data: m.data_manifestacao,
+      }))
+    );
+  }
 
   useEffect(() => {
     if (!selecionada) {
@@ -80,14 +109,34 @@ export default function OngRequests() {
 
   return (
     <>
-      <Panel title="Solicitações recebidas" subtitle={`${manifestacoes.length} manifestações de interesse`}>
+      <Panel title="Solicitações recebidas" subtitle={`${manifestacoesFiltradas.length} de ${manifestacoes.length} manifestações de interesse`}>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <select
+            value={statusFiltro}
+            onChange={(e) => setStatusFiltro(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+          >
+            <option value="">Todas as situações</option>
+            {STATUS_MANIFESTACAO.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <button
+            onClick={exportar}
+            disabled={manifestacoesFiltradas.length === 0}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-ink hover:border-ong disabled:opacity-60"
+          >
+            Exportar CSV
+          </button>
+        </div>
+
         {carregando && <p className="text-sm text-muted">Carregando...</p>}
         {erro && <p className="text-sm text-red-600">{erro}</p>}
-        {!carregando && !erro && manifestacoes.length === 0 && (
-          <p className="text-sm text-muted">Nenhuma manifestação de interesse recebida ainda.</p>
+        {!carregando && !erro && manifestacoesFiltradas.length === 0 && (
+          <p className="text-sm text-muted">Nenhuma manifestação encontrada com esse filtro.</p>
         )}
         <div className="space-y-3">
-          {manifestacoes.map((m) => (
+          {manifestacoesFiltradas.map((m) => (
             <Row
               key={m.id}
               title={`${m.nome_adotante} → ${m.nome_animal}`}

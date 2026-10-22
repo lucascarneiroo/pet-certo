@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
 import { excluirAnimal, listarAnimais, listarProcessos, listarRegistrosAdmin } from "../../services/api";
+import { exportarCsv } from "../../utils/exportarCsv";
+
+const STATUS_ANIMAL = ["Disponível", "Em Processo", "Adotado"];
+const STATUS_PROCESSO = ["Em Andamento", "Concluído", "Cancelado"];
 
 export default function AdminAnimals() {
   const [animais, setAnimais] = useState([]);
@@ -10,6 +14,10 @@ export default function AdminAnimals() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [excluindoId, setExcluindoId] = useState(null);
+
+  const [buscaAnimal, setBuscaAnimal] = useState("");
+  const [statusAnimal, setStatusAnimal] = useState("");
+  const [statusProcesso, setStatusProcesso] = useState("");
 
   function carregar() {
     setCarregando(true);
@@ -41,16 +49,94 @@ export default function AdminAnimals() {
     }
   }
 
+  const animaisFiltrados = useMemo(() => {
+    const termo = buscaAnimal.trim().toLowerCase();
+    return animais.filter((a) => {
+      const bateBusca = !termo || `${a.name} ${a.institution}`.toLowerCase().includes(termo);
+      const bateStatus = !statusAnimal || a.status === statusAnimal;
+      return bateBusca && bateStatus;
+    });
+  }, [animais, buscaAnimal, statusAnimal]);
+
+  const processosFiltrados = useMemo(
+    () => processos.filter((p) => !statusProcesso || p.status === statusProcesso),
+    [processos, statusProcesso]
+  );
+
+  function exportarAnimais() {
+    exportarCsv(
+      "animais-pet-certo",
+      [
+        { chave: "id", titulo: "ID" },
+        { chave: "nome", titulo: "Nome" },
+        { chave: "instituicao", titulo: "Instituição" },
+        { chave: "status", titulo: "Situação" },
+        { chave: "caracteristicas", titulo: "Características" },
+      ],
+      animaisFiltrados.map((a) => ({
+        id: a.id,
+        nome: a.name,
+        instituicao: a.institution,
+        status: a.status,
+        caracteristicas: (a.caracteristicas || []).join(", "),
+      }))
+    );
+  }
+
+  function exportarProcessos() {
+    exportarCsv(
+      "processos-de-adocao-pet-certo",
+      [
+        { chave: "id", titulo: "Processo" },
+        { chave: "animal", titulo: "Animal" },
+        { chave: "adotante", titulo: "Adotante" },
+        { chave: "status", titulo: "Situação" },
+      ],
+      processosFiltrados.map((p) => ({
+        id: p.id,
+        animal: p.nome_animal,
+        adotante: p.nome_adotante,
+        status: p.status,
+      }))
+    );
+  }
+
   return (
     <>
-      <Panel title="Animais" subtitle={`${animais.length} animais cadastrados na plataforma`}>
+      <Panel title="Animais" subtitle={`${animaisFiltrados.length} de ${animais.length} animais cadastrados na plataforma`}>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <input
+            value={buscaAnimal}
+            onChange={(e) => setBuscaAnimal(e.target.value)}
+            placeholder="Buscar por nome do animal ou instituição"
+            className="min-w-[220px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink outline-none focus:border-admin"
+          />
+          <select
+            value={statusAnimal}
+            onChange={(e) => setStatusAnimal(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+          >
+            <option value="">Todas as situações</option>
+            {STATUS_ANIMAL.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <button
+            onClick={exportarAnimais}
+            disabled={animaisFiltrados.length === 0}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-ink hover:border-admin disabled:opacity-60"
+          >
+            Exportar CSV
+          </button>
+        </div>
+
         {carregando && <p className="text-sm text-muted">Carregando...</p>}
         {erro && <p className="text-sm text-red-600">{erro}</p>}
-        {!carregando && !erro && animais.length === 0 && (
-          <p className="text-sm text-muted">Nenhum animal cadastrado ainda.</p>
+        {!carregando && !erro && animaisFiltrados.length === 0 && (
+          <p className="text-sm text-muted">Nenhum animal encontrado com esses filtros.</p>
         )}
         <div className="space-y-3">
-          {animais.map((a) => (
+          {animaisFiltrados.map((a) => (
             <Row
               key={a.id}
               title={`${a.name} · ${a.institution}`}
@@ -72,12 +158,32 @@ export default function AdminAnimals() {
         </div>
       </Panel>
 
-      <Panel title="Processos de adoção" subtitle={`${processos.length} processos no total`}>
-        {!carregando && processos.length === 0 && (
-          <p className="text-sm text-muted">Nenhum processo de adoção iniciado ainda.</p>
+      <Panel title="Processos de adoção" subtitle={`${processosFiltrados.length} de ${processos.length} processos`}>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <select
+            value={statusProcesso}
+            onChange={(e) => setStatusProcesso(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+          >
+            <option value="">Todas as situações</option>
+            {STATUS_PROCESSO.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <button
+            onClick={exportarProcessos}
+            disabled={processosFiltrados.length === 0}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-ink hover:border-admin disabled:opacity-60"
+          >
+            Exportar CSV
+          </button>
+        </div>
+
+        {!carregando && processosFiltrados.length === 0 && (
+          <p className="text-sm text-muted">Nenhum processo encontrado com esse filtro.</p>
         )}
         <div className="space-y-3">
-          {processos.map((p) => (
+          {processosFiltrados.map((p) => (
             <Row
               key={p.id}
               title={`${p.nome_animal} · ${p.nome_adotante} · Processo #${p.id}`}

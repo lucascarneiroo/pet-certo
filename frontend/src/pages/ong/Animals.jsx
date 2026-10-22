@@ -8,6 +8,7 @@ import {
   listarAnimais,
   listarTagsPadrao,
 } from "../../services/api";
+import { exportarCsv } from "../../utils/exportarCsv";
 
 // valores canônicos usados pelo fluxo de adoção (ver backend/database/adocao_repository.py)
 const STATUS_OPCOES = ["Disponível", "Em Processo", "Adotado"];
@@ -242,14 +243,41 @@ export default function OngAnimals() {
     );
   }
 
+  function exportar() {
+    exportarCsv(
+      "meus-animais-pet-certo",
+      [
+        { chave: "id", titulo: "ID" },
+        { chave: "nome", titulo: "Nome" },
+        { chave: "status", titulo: "Situação" },
+        { chave: "caracteristicas", titulo: "Características" },
+      ],
+      animais.map((a) => ({
+        id: a.id,
+        nome: a.name,
+        status: a.status,
+        caracteristicas: (a.caracteristicas || []).join(", "),
+      }))
+    );
+  }
+
   return (
     <Panel title="Gerenciamento de animais" subtitle="Cadastro, edição e situação dos animais da instituição">
-      <input
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-        placeholder="Buscar pelo nome do animal"
-        className="mb-4 w-full rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-ink outline-none focus:border-ong"
-      />
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar pelo nome do animal"
+          className="min-w-[220px] flex-1 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-ink outline-none focus:border-ong"
+        />
+        <button
+          onClick={exportar}
+          disabled={animais.length === 0}
+          className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-ink hover:border-ong disabled:opacity-60"
+        >
+          Exportar CSV
+        </button>
+      </div>
 
       {carregando && <p className="text-sm text-muted">Carregando animais...</p>}
       {erroLista && <p className="text-sm text-red-600">{erroLista}</p>}
