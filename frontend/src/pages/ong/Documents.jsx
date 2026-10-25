@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, Row } from "../../components/Panel";
 import { listarDocumentos, listarProcessos } from "../../services/api";
+
+const STATUS_PROCESSO = ["Em Andamento", "Concluído", "Cancelado"];
 
 export default function OngDocuments() {
   const [processos, setProcessos] = useState([]);
@@ -9,6 +11,9 @@ export default function OngDocuments() {
   const [carregando, setCarregando] = useState(true);
   const [carregandoDocs, setCarregandoDocs] = useState(false);
   const [erro, setErro] = useState("");
+
+  const [busca, setBusca] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState("");
 
   useEffect(() => {
     setCarregando(true);
@@ -31,16 +36,47 @@ export default function OngDocuments() {
       .finally(() => setCarregandoDocs(false));
   }, [selecionadoId]);
 
+  const processosFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return processos.filter((p) => {
+      const bateBusca = !termo || `${p.nome_adotante} ${p.nome_animal}`.toLowerCase().includes(termo);
+      const bateStatus = !statusFiltro || p.status === statusFiltro;
+      return bateBusca && bateStatus;
+    });
+  }, [processos, busca, statusFiltro]);
+
   return (
     <>
-      <Panel title="Processos" subtitle="Selecione um processo para ver os documentos enviados">
+      <Panel
+        title="Processos"
+        subtitle={`${processosFiltrados.length} de ${processos.length} — selecione um para ver os documentos enviados`}
+      >
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por adotante ou animal"
+            className="min-w-[220px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink outline-none focus:border-ong"
+          />
+          <select
+            value={statusFiltro}
+            onChange={(e) => setStatusFiltro(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+          >
+            <option value="">Todas as situações</option>
+            {STATUS_PROCESSO.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+
         {carregando && <p className="text-sm text-muted">Carregando...</p>}
         {erro && <p className="text-sm text-red-600">{erro}</p>}
-        {!carregando && processos.length === 0 && (
-          <p className="text-sm text-muted">Nenhum processo de adoção ainda.</p>
+        {!carregando && processosFiltrados.length === 0 && (
+          <p className="text-sm text-muted">Nenhum processo encontrado com esses filtros.</p>
         )}
         <div className="space-y-3">
-          {processos.map((p) => (
+          {processosFiltrados.map((p) => (
             <Row
               key={p.id}
               title={`${p.nome_adotante} × ${p.nome_animal}`}

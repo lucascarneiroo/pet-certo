@@ -17,6 +17,7 @@ export default function AdminAnimals() {
 
   const [buscaAnimal, setBuscaAnimal] = useState("");
   const [statusAnimal, setStatusAnimal] = useState("");
+  const [buscaProcesso, setBuscaProcesso] = useState("");
   const [statusProcesso, setStatusProcesso] = useState("");
 
   function carregar() {
@@ -58,10 +59,14 @@ export default function AdminAnimals() {
     });
   }, [animais, buscaAnimal, statusAnimal]);
 
-  const processosFiltrados = useMemo(
-    () => processos.filter((p) => !statusProcesso || p.status === statusProcesso),
-    [processos, statusProcesso]
-  );
+  const processosFiltrados = useMemo(() => {
+    const termo = buscaProcesso.trim().toLowerCase();
+    return processos.filter((p) => {
+      const bateBusca = !termo || `${p.nome_adotante} ${p.nome_animal}`.toLowerCase().includes(termo);
+      const bateStatus = !statusProcesso || p.status === statusProcesso;
+      return bateBusca && bateStatus;
+    });
+  }, [processos, buscaProcesso, statusProcesso]);
 
   function exportarAnimais() {
     exportarCsv(
@@ -160,6 +165,12 @@ export default function AdminAnimals() {
 
       <Panel title="Processos de adoção" subtitle={`${processosFiltrados.length} de ${processos.length} processos`}>
         <div className="mb-4 flex flex-wrap items-end gap-3">
+          <input
+            value={buscaProcesso}
+            onChange={(e) => setBuscaProcesso(e.target.value)}
+            placeholder="Buscar por adotante ou animal"
+            className="min-w-[220px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink outline-none focus:border-admin"
+          />
           <select
             value={statusProcesso}
             onChange={(e) => setStatusProcesso(e.target.value)}

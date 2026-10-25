@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
 import { listarEtapas, listarManifestacoes, listarProcessos } from "../../services/api";
+
+// união dos status possíveis: de ManifestacaoInteresse (sem processo ainda)
+// e de ProcessoAdocao (depois que a instituição aprova)
+const STATUS_SOLICITACAO = ["Pendente", "Recusada", "Em Andamento", "Concluído", "Cancelado"];
 
 export default function AdopterRequests() {
   const [manifestacoes, setManifestacoes] = useState([]);
   const [processos, setProcessos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState("");
 
   const [processoSelecionadoId, setProcessoSelecionadoId] = useState(null);
   const [etapas, setEtapas] = useState([]);
@@ -42,16 +47,45 @@ export default function AdopterRequests() {
 
   const processoAtivo = processos.find((p) => p.id === processoSelecionadoId) || null;
 
+  const manifestacoesFiltradas = useMemo(
+    () =>
+      manifestacoes.filter((m) => {
+        if (!statusFiltro) return true;
+        const processo = processoDaManifestacao(m.id);
+        const statusEfetivo = processo ? processo.status : m.status;
+        return statusEfetivo === statusFiltro;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [manifestacoes, processos, statusFiltro]
+  );
+
   return (
     <>
-      <Panel title="Minhas Adoções" subtitle="Acompanhe suas manifestações de interesse e processos">
+      <Panel
+        title="Minhas Adoções"
+        subtitle={`${manifestacoesFiltradas.length} de ${manifestacoes.length} — acompanhe suas manifestações de interesse e processos`}
+      >
+        <select
+          value={statusFiltro}
+          onChange={(e) => setStatusFiltro(e.target.value)}
+          className="mb-4 rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+        >
+          <option value="">Todas as situações</option>
+          {STATUS_SOLICITACAO.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+
         {carregando && <p className="text-sm text-muted">Carregando...</p>}
         {erro && <p className="text-sm text-red-600">{erro}</p>}
         {!carregando && !erro && manifestacoes.length === 0 && (
           <p className="text-sm text-muted">Você ainda não manifestou interesse em nenhum animal.</p>
         )}
+        {!carregando && !erro && manifestacoes.length > 0 && manifestacoesFiltradas.length === 0 && (
+          <p className="text-sm text-muted">Nenhuma solicitação encontrada com esse filtro.</p>
+        )}
         <div className="space-y-3">
-          {manifestacoes.map((m) => {
+          {manifestacoesFiltradas.map((m) => {
             const processo = processoDaManifestacao(m.id);
             return (
               <Row

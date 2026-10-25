@@ -646,7 +646,11 @@ class PetCertoHandler(BaseHTTPRequestHandler):
         self._exigir_instituicao_ou_admin(usuario)
         self._exigir_dono_do_processo_ou_admin(usuario, processo_id)
         corpo = self._ler_corpo_json()
-        processo = cancelar_processo(processo_id, corpo.get("motivo"))
+        motivo = corpo.get("motivo")
+        processo = cancelar_processo(processo_id, motivo)
+        if usuario.eh_admin:
+            descricao = f"Processo {processo_id} cancelado." + (f" Motivo: {motivo}." if motivo else "")
+            registrar_acao_admin(usuario.id, "Cancelamento de Processo", descricao)
         return processo.__dict__
 
 

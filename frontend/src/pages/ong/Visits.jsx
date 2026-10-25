@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
 import {
@@ -11,6 +11,8 @@ import {
   listarProcessos,
   listarVisitas,
 } from "../../services/api";
+
+const STATUS_VISITA = ["Agendada", "Realizada", "Cancelada"];
 
 function formatarDataHora(valor) {
   const d = new Date(String(valor).replace(" ", "T"));
@@ -33,6 +35,9 @@ export default function OngVisits() {
   const [selecaoHorario, setSelecaoHorario] = useState({});
   const [agendando, setAgendando] = useState(null);
   const [erroAgendar, setErroAgendar] = useState("");
+
+  const [busca, setBusca] = useState("");
+  const [statusVisita, setStatusVisita] = useState("");
 
   function carregar() {
     if (!usuario) return Promise.resolve();
@@ -105,19 +110,34 @@ export default function OngVisits() {
     }
   }
 
+  const termo = busca.trim().toLowerCase();
+  const bateBusca = (p) => !termo || `${p.nome_adotante} ${p.nome_animal}`.toLowerCase().includes(termo);
+
   const processosEmVisita = processos
     .filter((p) => p.status === "Em Andamento")
     .filter((p) => {
       const atual = (etapasPorProcesso[p.id] || []).find((e) => e.status === "Em Andamento");
       return atual && atual.nome === "Visita";
-    });
+    })
+    .filter(bateBusca);
 
   const todasVisitas = processos
     .filter((p) => p.status === "Em Andamento")
-    .flatMap((p) => (visitasPorProcesso[p.id] || []).map((v) => ({ ...v, processo: p })));
+    .flatMap((p) => (visitasPorProcesso[p.id] || []).map((v) => ({ ...v, processo: p })))
+    .filter((v) => bateBusca(v.processo))
+    .filter((v) => !statusVisita || v.status === statusVisita);
 
   return (
     <>
+      <Panel title="Buscar" subtitle="Filtra os processos e visitas abaixo por adotante ou animal">
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por adotante ou animal"
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink outline-none focus:border-ong"
+        />
+      </Panel>
+
       <Panel title="Horários disponíveis" subtitle="Datas e horários que a instituição oferece para visitas">
         <form onSubmit={handleCriarHorario} className="mb-4 flex flex-wrap items-end gap-3">
           <div>
@@ -191,8 +211,19 @@ export default function OngVisits() {
       </Panel>
 
       <Panel title="Visitas agendadas" subtitle="Marque como realizada ou cancelada depois do dia">
+        <select
+          value={statusVisita}
+          onChange={(e) => setStatusVisita(e.target.value)}
+          className="mb-4 rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink"
+        >
+          <option value="">Todas as situações</option>
+          {STATUS_VISITA.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+
         {todasVisitas.length === 0 && !carregando && (
-          <p className="text-sm text-muted">Nenhuma visita agendada ainda.</p>
+          <p className="text-sm text-muted">Nenhuma visita encontrada com esses filtros.</p>
         )}
         <div className="space-y-3">
           {todasVisitas.map((v) => (
