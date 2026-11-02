@@ -327,6 +327,16 @@ def concluir_processo(processo_id: int) -> ProcessoAdocao:
             if processo["status"] != "Em Andamento":
                 raise FluxoDeAdocaoInvalidoError("Só é possível concluir um processo que está em andamento.")
 
+            cur.execute(
+                "SELECT COUNT(*) AS total FROM EtapaAdocao WHERE idProcesso = %s AND status != 'Concluída'",
+                (processo_id,),
+            )
+            if cur.fetchone()["total"] > 0:
+                raise FluxoDeAdocaoInvalidoError(
+                    "Todas as etapas (Análise, Visita, Documentação, Aprovação) precisam estar concluídas "
+                    "antes de concluir a adoção."
+                )
+
             animal = _animal_do_processo(cur, processo_id)
             cur.execute("UPDATE ProcessoAdocao SET status = 'Concluído' WHERE idProcesso = %s", (processo_id,))
             cur.execute("UPDATE Animal SET status = 'Adotado' WHERE idAnimal = %s", (animal["idanimal"],))
