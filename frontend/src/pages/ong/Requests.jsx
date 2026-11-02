@@ -3,8 +3,13 @@ import { Panel, ProgressBar, Row } from "../../components/Panel";
 import StatusBadge from "../../components/StatusBadge";
 import {
   aprovarManifestacao,
+  atualizarEtapa,
   buscarCompatibilidadeDaManifestacao,
+  cancelarProcesso,
+  concluirProcesso,
+  listarEtapas,
   listarManifestacoes,
+  listarProcessos,
   recusarManifestacao,
 } from "../../services/api";
 import { exportarCsv } from "../../utils/exportarCsv";
@@ -25,6 +30,12 @@ export default function OngRequests() {
   const [processando, setProcessando] = useState(false);
   const [erroAcao, setErroAcao] = useState("");
 
+  const [processos, setProcessos] = useState([]);
+  const [etapasPorProcesso, setEtapasPorProcesso] = useState({});
+  const [acaoProcessoId, setAcaoProcessoId] = useState(null);
+  const [erroProcesso, setErroProcesso] = useState("");
+  const [motivoCancelamento, setMotivoCancelamento] = useState({});
+
   function carregar() {
     setCarregando(true);
     setErro("");
@@ -34,8 +45,20 @@ export default function OngRequests() {
       .finally(() => setCarregando(false));
   }
 
+  function carregarProcessos() {
+    return listarProcessos().then(async (procs) => {
+      const emAndamento = procs.filter((p) => p.status === "Em Andamento");
+      setProcessos(emAndamento);
+      const entries = await Promise.all(
+        emAndamento.map((p) => listarEtapas(p.id).then((e) => [p.id, e]).catch(() => [p.id, []]))
+      );
+      setEtapasPorProcesso(Object.fromEntries(entries));
+    });
+  }
+
   useEffect(() => {
     carregar();
+    carregarProcessos();
   }, []);
 
   const selecionada = manifestacoes.find((m) => m.id === selecionadaId) || null;
@@ -86,6 +109,7 @@ export default function OngRequests() {
       await aprovarManifestacao(selecionada.id);
       setSelecionadaId(null);
       await carregar();
+      await carregarProcessos();
     } catch (err) {
       setErroAcao(err.message);
     } finally {
@@ -104,6 +128,45 @@ export default function OngRequests() {
       setErroAcao(err.message);
     } finally {
       setProcessando(false);
+    }
+  }
+
+  async function avancarEtapa(processoId, etapa) {
+    setErroProcesso("");
+    setAcaoProcessoId(processoId);
+    try {
+      await atualizarEtapa(processoId, etapa.id, "Concluída");
+      await carregarProcessos();
+    } catch (err) {
+      setErroProcesso(err.message);
+    } finally {
+      setAcaoProcessoId(null);
+    }
+  }
+
+  async function concluirAdocao(processoId) {
+    setErroProcesso("");
+    setAcaoProcessoId(processoId);
+    try {
+      await concluirProcesso(processoId);
+      await carregarProcessos();
+    } catch (err) {
+      setErroProcesso(err.message);
+    } finally {
+      setAcaoProcessoId(null);
+    }
+  }
+
+  async function cancelar(processoId) {
+    setErroProcesso("");
+    setAcaoProcessoId(processoId);
+    try {
+      await cancelarProcesso(processoId, motivoCancelamento[processoId] || undefined);
+      await carregarProcessos();
+    } catch (err) {
+      setErroProcesso(err.message);
+    } finally {
+      setAcaoProcessoId(null);
     }
   }
 
@@ -205,6 +268,72 @@ export default function OngRequests() {
           )}
         </Panel>
       )}
+
+      <Panel title="Processos em andamento" subtitle={`${processos.length} processo(s) ativo(s) — avance as etapas até concluir a adoção`}>
+        {erroProcesso && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erroProcesso}</p>}
+        {processos.length === 0 && (
+          <p className="text-sm text-muted">Nenhum processo em andamento no momento.</p>
+        )}
+        <div className="space-y-4">
+          {processos.map((p) => {
+            const etapas = etapasPorProcesso[p.id] || [];
+            const etapaAtual = etapas.find((e) => e.status === "Em Andamento");
+            const todasConcluidas = etapas.length > 0 && etapas.every((e) => e.status === "Concluída");
+            const ocupado = acaoProcessoId === p.id;
+            return (
+              <div key={p.id} className="rounded-xl border border-slate-100 p-4">
+                <p className="text-sm font-bold text-ink">
+                  {p.nome_adotante} × {p.nome_animal} · Processo #{p.id}
+                </p>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {etapas.map((e) => (
+                    <li key={e.id} className={e.status === "Em Andamento" ? "font-semibold text-ong" : "text-muted"}>
+                      {e.status === "Concluída" ? "✓ " : e.status === "Em Andamento" ? "• " : "· "}
+                      {e.nome} — {e.status}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {etapaAtual && (
+                    <button
+                      onClick={() => avancarEtapa(p.id, etapaAtual)}
+                      disabled={ocupado}
+                      className="rounded-lg bg-ong px-4 py-2 text-sm font-semibold text-white transition hover:bg-ong-dark disabled:opacity-60"
+                    >
+                      {ocupado ? "Processando..." : `Concluir etapa "${etapaAtual.nome}"`}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => concluirAdocao(p.id)}
+                    disabled={!todasConcluidas || ocupado}
+                    title={!todasConcluidas ? "Conclua todas as etapas antes de concluir a adoção" : undefined}
+                    className="rounded-lg border border-ong px-4 py-2 text-sm font-semibold text-ong transition hover:bg-ong hover:text-white disabled:opacity-40"
+                  >
+                    Concluir adoção
+                  </button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <input
+                    value={motivoCancelamento[p.id] || ""}
+                    onChange={(e) => setMotivoCancelamento((m) => ({ ...m, [p.id]: e.target.value }))}
+                    placeholder="Motivo do cancelamento (opcional)"
+                    className="min-w-[220px] flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-ink outline-none focus:border-ong"
+                  />
+                  <button
+                    onClick={() => cancelar(p.id)}
+                    disabled={ocupado}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    Cancelar processo
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
     </>
   );
 }
