@@ -66,9 +66,15 @@ CREATE TABLE IF NOT EXISTS Animal (
     nome VARCHAR(255) NOT NULL,
     dataNascimento DATE,
     status VARCHAR(50) NOT NULL DEFAULT 'Disponível',
+    urlFoto VARCHAR(500),
     CONSTRAINT fk_animal_instituicao FOREIGN KEY (idInstituicao)
         REFERENCES Instituicao (idUsuario) ON DELETE RESTRICT ON UPDATE CASCADE
 );
+
+-- Garante a coluna em bancos criados antes dela existir (schema.sql roda a
+-- cada start do backend, com CREATE TABLE IF NOT EXISTS; ALTER cobre quem
+-- já tinha a tabela).
+ALTER TABLE Animal ADD COLUMN IF NOT EXISTS urlFoto VARCHAR(500);
 
 CREATE TABLE IF NOT EXISTS CaracteristicaAnimal (
     idCaracteristica SERIAL PRIMARY KEY,

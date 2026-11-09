@@ -86,6 +86,7 @@ function animalDoBackendParaFrontend(a) {
     dataNascimento: a.data_nascimento,
     caracteristicas: a.caracteristicas,
     compat: a.score_compatibilidade,
+    foto: a.url_foto,
   };
 }
 
@@ -109,10 +110,10 @@ export async function buscarAnimal(id) {
   return animalDoBackendParaFrontend(dados);
 }
 
-export async function criarAnimal({ nome, data_nascimento, caracteristicas, id_instituicao }) {
+export async function criarAnimal({ nome, data_nascimento, caracteristicas, id_instituicao, url_foto }) {
   const dados = await chamarApi("/api/animais", {
     metodo: "POST",
-    corpo: { nome, data_nascimento, caracteristicas, id_instituicao },
+    corpo: { nome, data_nascimento, caracteristicas, id_instituicao, url_foto },
   });
   return animalDoBackendParaFrontend(dados);
 }

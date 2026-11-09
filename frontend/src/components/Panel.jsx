@@ -12,16 +12,26 @@ export function Panel({ title, subtitle, children, className = "" }) {
   );
 }
 
-export function Row({ title, subtitle, right, onClick, className = "" }) {
+export function Row({ title, subtitle, right, onClick, className = "", avatar }) {
   const Comp = onClick ? "button" : "div";
   return (
     <Comp
       onClick={onClick}
       className={`flex w-full items-center justify-between gap-4 rounded-xl border border-slate-100 bg-white px-4 py-3.5 text-left transition hover:border-slate-200 hover:shadow-sm ${className}`}
     >
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-ink">{title}</p>
-        {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
+      <div className="flex min-w-0 items-center gap-3">
+        {avatar && (
+          <img
+            src={avatar}
+            alt=""
+            className="h-11 w-11 shrink-0 rounded-lg object-cover"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-ink">{title}</p>
+          {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
+        </div>
       </div>
       {right}
     </Comp>

@@ -13,7 +13,7 @@ import { exportarCsv } from "../../utils/exportarCsv";
 // valores canônicos usados pelo fluxo de adoção (ver backend/database/adocao_repository.py)
 const STATUS_OPCOES = ["Disponível", "Em Processo", "Adotado"];
 
-const formVazio = { nome: "", data_nascimento: "", tags: [] };
+const formVazio = { nome: "", data_nascimento: "", tags: [], foto: "" };
 
 // separa as etiquetas padrão em categorias de escolha única ("Porte: Pequeno", "Porte: Médio"...)
 // e etiquetas booleanas soltas ("Convive com Crianças"), a partir do texto de cada etiqueta.
@@ -103,6 +103,7 @@ export default function OngAnimals() {
       nome: animal.name || "",
       data_nascimento: animal.dataNascimento || "",
       tags: animal.caracteristicas || [],
+      foto: animal.foto || "",
     });
     setEditandoId(animal.id);
     setErroForm("");
@@ -119,7 +120,12 @@ export default function OngAnimals() {
     setErroForm("");
     setSalvando(true);
     try {
-      const dados = { nome, data_nascimento: form.data_nascimento || null, caracteristicas: form.tags };
+      const dados = {
+        nome,
+        data_nascimento: form.data_nascimento || null,
+        caracteristicas: form.tags,
+        url_foto: form.foto.trim() || null,
+      };
       if (editandoId) {
         await atualizarAnimal(editandoId, dados);
       } else {
@@ -177,7 +183,22 @@ export default function OngAnimals() {
               value={form.data_nascimento || ""}
               onChange={(e) => setForm((f) => ({ ...f, data_nascimento: e.target.value }))}
             />
+            <Field
+              label="URL da foto"
+              value={form.foto}
+              onChange={(e) => setForm((f) => ({ ...f, foto: e.target.value }))}
+              placeholder="https://..."
+            />
           </div>
+
+          {form.foto && (
+            <img
+              src={form.foto}
+              alt="Pré-visualização"
+              className="h-28 w-28 rounded-lg object-cover"
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
+            />
+          )}
 
           {categorias.size > 0 && (
             <div className="grid gap-4 sm:grid-cols-3">
@@ -289,6 +310,7 @@ export default function OngAnimals() {
         {animais.map((a) => (
           <Row
             key={a.id}
+            avatar={a.foto}
             title={a.name}
             subtitle={(a.caracteristicas || []).join(" · ") || "Sem características cadastradas"}
             right={

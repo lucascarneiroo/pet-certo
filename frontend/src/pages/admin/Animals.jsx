@@ -144,6 +144,7 @@ export default function AdminAnimals() {
           {animaisFiltrados.map((a) => (
             <Row
               key={a.id}
+              avatar={a.foto}
               title={`${a.name} · ${a.institution}`}
               subtitle={(a.caracteristicas || []).join(" · ")}
               right={

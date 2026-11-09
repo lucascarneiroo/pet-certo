@@ -51,16 +51,22 @@ def _definir_caracteristicas(cur, animal_id: int, tags: List[str]) -> None:
         )
 
 
-def criar_animal(id_instituicao: int, nome: str, data_nascimento: Optional[str], caracteristicas: List[str]) -> Animal:
+def criar_animal(
+    id_instituicao: int,
+    nome: str,
+    data_nascimento: Optional[str],
+    caracteristicas: List[str],
+    url_foto: Optional[str] = None,
+) -> Animal:
     if not nome or not nome.strip():
         raise DadosDoAnimalInvalidosError("Nome do animal é obrigatório.")
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO Animal (idInstituicao, nome, dataNascimento, status) "
-                "VALUES (%s, %s, %s, 'Disponível') RETURNING idAnimal",
-                (id_instituicao, nome.strip(), data_nascimento),
+                "INSERT INTO Animal (idInstituicao, nome, dataNascimento, status, urlFoto) "
+                "VALUES (%s, %s, %s, 'Disponível', %s) RETURNING idAnimal",
+                (id_instituicao, nome.strip(), data_nascimento, url_foto),
             )
             novo_id = cur.fetchone()["idanimal"]
             _definir_caracteristicas(cur, novo_id, caracteristicas or [])
@@ -150,7 +156,7 @@ def atualizar_animal(animal_id: int, **campos) -> Optional[Animal]:
     try:
         with conn.cursor() as cur:
             caracteristicas = campos.pop("caracteristicas", None)
-            colunas_permitidas = {"nome": "nome", "data_nascimento": "dataNascimento", "status": "status"}
+            colunas_permitidas = {"nome": "nome", "data_nascimento": "dataNascimento", "status": "status", "url_foto": "urlFoto"}
             sets, valores = [], []
             for chave, valor in campos.items():
                 if chave in colunas_permitidas and valor is not None:

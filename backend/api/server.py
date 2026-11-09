@@ -96,6 +96,7 @@ def _animal_para_json(animal) -> dict:
         "data_nascimento": animal.data_nascimento,
         "status": animal.status,
         "caracteristicas": animal.caracteristicas,
+        "url_foto": animal.url_foto,
     }
 
 
@@ -414,6 +415,7 @@ class PetCertoHandler(BaseHTTPRequestHandler):
             nome=corpo.get("nome", ""),
             data_nascimento=corpo.get("data_nascimento"),
             caracteristicas=corpo.get("caracteristicas", []),
+            url_foto=corpo.get("url_foto"),
         )
         return 201, _animal_para_json(animal)
 
@@ -430,6 +432,7 @@ class PetCertoHandler(BaseHTTPRequestHandler):
             data_nascimento=corpo.get("data_nascimento"),
             status=corpo.get("status"),
             caracteristicas=corpo.get("caracteristicas"),
+            url_foto=corpo.get("url_foto"),
         )
         return _animal_para_json(atualizado)
 

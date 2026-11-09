@@ -89,6 +89,14 @@ export default function AdopterAnimals() {
                 onClick={() => navigate(`/adotante/animais/${a.id}`)}
                 className="rounded-xl border border-slate-100 p-4 text-left transition hover:border-adopter hover:shadow-sm"
               >
+                {a.foto && (
+                  <img
+                    src={a.foto}
+                    alt={a.name}
+                    className="mb-3 h-32 w-full rounded-lg object-cover"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                )}
                 <p className="text-sm font-bold text-ink">
                   #{i + 1} · {a.name}
                 </p>
@@ -151,6 +159,14 @@ export default function AdopterAnimals() {
               onClick={() => navigate(`/adotante/animais/${a.id}`)}
               className="rounded-xl border border-slate-100 p-4 text-left transition hover:border-adopter hover:shadow-sm"
             >
+              {a.foto && (
+                <img
+                  src={a.foto}
+                  alt={a.name}
+                  className="mb-3 h-32 w-full rounded-lg object-cover"
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                />
+              )}
               <p className="text-sm font-bold text-ink">{a.name}</p>
               <p className="mt-0.5 text-xs text-muted">
                 {(a.caracteristicas || []).slice(0, 2).join(" · ") || a.institution}
@@ -165,6 +181,7 @@ export default function AdopterAnimals() {
           {animais.map((a, i) => (
             <Row
               key={a.id}
+              avatar={a.foto}
               title={`${i + 1}. ${a.name}`}
               subtitle={(a.caracteristicas || []).join(" · ") || a.institution}
               onClick={() => navigate(`/adotante/animais/${a.id}`)}

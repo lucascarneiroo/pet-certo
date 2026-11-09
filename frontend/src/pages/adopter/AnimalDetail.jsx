@@ -31,10 +31,12 @@ export default function AnimalDetail() {
   const [favoritado, setFavoritado] = useState(false);
   const [alterandoFavorito, setAlterandoFavorito] = useState(false);
   const [erroFavorito, setErroFavorito] = useState("");
+  const [fotoComErro, setFotoComErro] = useState(false);
 
   useEffect(() => {
     setCarregando(true);
     setErro("");
+    setFotoComErro(false);
     buscarAnimal(id)
       .then(setAnimal)
       .catch((err) => setErro(err.message))
@@ -116,9 +118,18 @@ export default function AnimalDetail() {
     <>
       <Panel>
         <div className="grid gap-6 sm:grid-cols-[220px_1fr]">
-          <div className="flex aspect-square items-center justify-center rounded-xl bg-adopter-soft text-sm font-semibold text-adopter">
-            {animal.name}
-          </div>
+          {animal.foto && !fotoComErro ? (
+            <img
+              src={animal.foto}
+              alt={animal.name}
+              className="aspect-square w-full rounded-xl object-cover"
+              onError={() => setFotoComErro(true)}
+            />
+          ) : (
+            <div className="flex aspect-square items-center justify-center rounded-xl bg-adopter-soft text-sm font-semibold text-adopter">
+              {animal.name}
+            </div>
+          )}
           <div>
             <h2 className="text-xl font-extrabold text-ink">{animal.name}</h2>
             <p className="text-sm text-muted">{(animal.caracteristicas || []).join(" · ")}</p>
