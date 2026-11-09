@@ -62,6 +62,11 @@ python scripts/teste_fluxo_adocao.py    # fluxo completo: cadastro, login,
                                          # animal, favoritar, manifestação,
                                          # aprovação, visita, documentos,
                                          # conclusão — inclui casos de erro
+python scripts/teste_validacao.py       # dados inválidos, campos obrigatórios,
+                                         # formatos incorretos, duplicidade e
+                                         # violação de regra de negócio —
+                                         # confere o status HTTP e a mensagem
+                                         # de cada rejeição
 
 # não precisam do servidor rodando (rodar de dentro de backend/, com -m):
 python -m scripts.teste_compatibilidade # núcleo de compatibilidade: diferentes
