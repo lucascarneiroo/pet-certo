@@ -1,5 +1,6 @@
 """CRUD de animais + gestão das etiquetas (características) via
 CaracteristicaAnimal / AnimalCaracteristica."""
+from datetime import date
 from typing import List, Optional
 
 from database.db import get_connection
@@ -9,6 +10,17 @@ from models.animal import Animal
 
 class DadosDoAnimalInvalidosError(Exception):
     pass
+
+
+def _validar_data_nascimento(data_nascimento: Optional[str]) -> None:
+    if not data_nascimento:
+        return
+    try:
+        date.fromisoformat(data_nascimento)
+    except ValueError:
+        raise DadosDoAnimalInvalidosError(
+            "Data de nascimento inválida. Use o formato AAAA-MM-DD."
+        )
 
 
 def _buscar_caracteristicas_do_animal(cur, animal_id: int) -> List[str]:
@@ -60,6 +72,7 @@ def criar_animal(
 ) -> Animal:
     if not nome or not nome.strip():
         raise DadosDoAnimalInvalidosError("Nome do animal é obrigatório.")
+    _validar_data_nascimento(data_nascimento)
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -152,6 +165,7 @@ def buscar_animal_por_id(animal_id: int) -> Optional[Animal]:
 
 
 def atualizar_animal(animal_id: int, **campos) -> Optional[Animal]:
+    _validar_data_nascimento(campos.get("data_nascimento"))
     conn = get_connection()
     try:
         with conn.cursor() as cur:

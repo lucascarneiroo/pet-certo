@@ -40,7 +40,8 @@ export default function OngDashboard() {
       })
       .catch((err) => setErro(err.message))
       .finally(() => setCarregando(false));
-  }, [usuario]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario?.id]);
 
   const disponiveis = animais.filter((a) => a.status === "Disponível").length;
   const emProcesso = animais.filter((a) => a.status === "Em Processo").length;

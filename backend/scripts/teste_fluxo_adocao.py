@@ -120,6 +120,20 @@ esperar(status == 201, "enviar documento")
 status, resp = chamar("GET", f"/api/processos/{id_processo}/historico", token=token_instituicao)
 esperar(status == 200 and len(resp) >= 3, f"histórico do processo registrou os eventos ({len(resp)} entradas)")
 
+# 9b. Concluir não pode pular etapas (regra de negócio reforçada na Sprint 08):
+# só a "Análise" foi concluída até aqui, as outras 3 etapas ainda estão pendentes.
+status, resp = chamar("POST", f"/api/processos/{id_processo}/concluir", token=token_instituicao)
+esperar(status == 400, "concluir processo com etapas pendentes é bloqueado com 400")
+
+# avança as 3 etapas restantes (Visita, Documentação, Aprovação) antes de concluir
+status, resp = chamar("GET", f"/api/processos/{id_processo}/etapas", token=token_instituicao)
+etapas_pendentes = [e for e in resp if e["status"] != "Concluída"]
+esperar(len(etapas_pendentes) == 3, "3 etapas ainda pendentes antes da conclusão")
+for etapa in etapas_pendentes:
+    status, resp = chamar("PUT", f"/api/processos/{id_processo}/etapas/{etapa['id']}",
+                           {"status": "Concluída"}, token=token_instituicao)
+    esperar(status == 200, f"concluir etapa '{etapa['nome']}'")
+
 # 10. Permissão negada: outra instituição não pode gerenciar este processo
 status, resp = chamar("POST", "/api/usuarios", {
     "nome": "Outro Abrigo", "email": f"outro{sufixo}@teste.com", "senha": "senha123",

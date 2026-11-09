@@ -53,7 +53,7 @@ export default function AnimalDetail() {
   useEffect(() => {
     recarregarCompatibilidade();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, usuario]);
+  }, [id, usuario?.id]);
 
   useEffect(() => {
     if (!usuario || usuario.perfil !== "adotante") return;
@@ -61,7 +61,7 @@ export default function AnimalDetail() {
       .then((favoritos) => setFavoritado(favoritos.some((f) => f.id_animal === Number(id))))
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, usuario]);
+  }, [id, usuario?.id]);
 
   async function handleFavoritar() {
     setErroFavorito("");

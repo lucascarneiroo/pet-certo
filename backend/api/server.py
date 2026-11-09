@@ -25,6 +25,7 @@ from database.adocao_repository import (
     aprovar_manifestacao,
     atualizar_visita,
     buscar_manifestacao_por_id,
+    buscar_processo_por_id,
     cancelar_processo,
     concluir_processo,
     criar_horario_visita,
@@ -164,6 +165,8 @@ class PetCertoHandler(BaseHTTPRequestHandler):
         raise ErroHTTP(403, "Este animal pertence a outra instituição.")
 
     def _exigir_dono_do_processo_ou_admin(self, usuario, processo_id: int) -> None:
+        if buscar_processo_por_id(processo_id) is None:
+            raise ErroHTTP(404, "Processo de adoção não encontrado.")
         if usuario.eh_admin:
             return
         if usuario.eh_instituicao:
@@ -580,6 +583,8 @@ class PetCertoHandler(BaseHTTPRequestHandler):
 
     def _listar_etapas(self, processo_id: int):
         self._usuario_autenticado()
+        if buscar_processo_por_id(processo_id) is None:
+            raise ErroHTTP(404, "Processo de adoção não encontrado.")
         return [e.__dict__ for e in listar_etapas(processo_id)]
 
     def _atualizar_etapa(self, processo_id: int, etapa_id: int):
@@ -592,6 +597,8 @@ class PetCertoHandler(BaseHTTPRequestHandler):
 
     def _listar_visitas(self, processo_id: int):
         self._usuario_autenticado()
+        if buscar_processo_por_id(processo_id) is None:
+            raise ErroHTTP(404, "Processo de adoção não encontrado.")
         return [v.__dict__ for v in listar_visitas_do_processo(processo_id)]
 
     def _agendar_visita(self, processo_id: int):
@@ -623,16 +630,25 @@ class PetCertoHandler(BaseHTTPRequestHandler):
 
     def _listar_documentos(self, processo_id: int):
         self._usuario_autenticado()
+        if buscar_processo_por_id(processo_id) is None:
+            raise ErroHTTP(404, "Processo de adoção não encontrado.")
         return [d.__dict__ for d in listar_documentos(processo_id)]
 
     def _enviar_documento(self, processo_id: int):
         self._usuario_autenticado()
+        if buscar_processo_por_id(processo_id) is None:
+            raise ErroHTTP(404, "Processo de adoção não encontrado.")
         corpo = self._ler_corpo_json()
-        documento = enviar_documento(processo_id, corpo.get("nome", ""), corpo.get("caminho_arquivo", ""))
+        nome = corpo.get("nome", "")
+        if not nome or not nome.strip():
+            raise ErroHTTP(400, "Nome do documento é obrigatório.")
+        documento = enviar_documento(processo_id, nome.strip(), corpo.get("caminho_arquivo", ""))
         return 201, documento.__dict__
 
     def _listar_historico(self, processo_id: int):
         self._usuario_autenticado()
+        if buscar_processo_por_id(processo_id) is None:
+            raise ErroHTTP(404, "Processo de adoção não encontrado.")
         return [h.__dict__ for h in listar_historico(processo_id)]
 
     def _concluir_processo(self, processo_id: int):
