@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Panel, Row } from "../../components/Panel";
-import StatusBadge from "../../components/StatusBadge";
+import { Panel } from "../../components/Panel";
 import { getUsuario, listarAnimais, listarRecomendacoes, listarTagsPadrao } from "../../services/api";
 
 // categorias de etiquetas oferecidas como filtro rápido nesta tela
@@ -82,30 +81,34 @@ export default function AdopterAnimals() {
               Favorite alguns animais para receber recomendações personalizadas.
             </p>
           )}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             {recomendados.map((a, i) => (
               <button
                 key={a.id}
                 onClick={() => navigate(`/adotante/animais/${a.id}`)}
-                className="rounded-xl border border-slate-100 p-4 text-left transition hover:border-adopter hover:shadow-sm"
+                className="group overflow-hidden rounded-2xl border border-slate-100 bg-white text-left transition hover:-translate-y-1 hover:shadow-lift"
               >
-                {a.foto && (
-                  <img
-                    src={a.foto}
-                    alt={a.name}
-                    className="mb-3 h-32 w-full rounded-lg object-cover"
-                    onError={(e) => { e.currentTarget.style.display = "none"; }}
-                  />
-                )}
-                <p className="text-sm font-bold text-ink">
-                  #{i + 1} · {a.name}
-                </p>
-                <p className="mt-0.5 text-xs text-muted">
-                  {(a.caracteristicas || []).slice(0, 2).join(" · ") || a.institution}
-                </p>
-                <span className="mt-2 inline-flex items-center rounded-full bg-[#E4F3E9] px-3 py-1 text-xs font-semibold text-[#2F7A50]">
-                  {a.compat}% compatível
-                </span>
+                <div className="h-36 w-full overflow-hidden bg-adopter-soft">
+                  {a.foto && (
+                    <img
+                      src={a.foto}
+                      alt={a.name}
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                  )}
+                </div>
+                <div className="p-4">
+                  <p className="text-base font-extrabold text-adopter">
+                    #{i + 1} · {a.name}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {(a.caracteristicas || []).slice(0, 2).join(" · ") || a.institution}
+                  </p>
+                  <span className="mt-2 inline-flex items-center rounded-full bg-[#E4F3E9] px-3 py-1 text-xs font-semibold text-[#2F7A50]">
+                    {a.compat}% compatível
+                  </span>
+                </div>
               </button>
             ))}
           </div>
@@ -152,41 +155,33 @@ export default function AdopterAnimals() {
           <p className="text-sm text-muted">Nenhum animal encontrado com esses filtros.</p>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {animais.map((a) => (
             <button
               key={a.id}
               onClick={() => navigate(`/adotante/animais/${a.id}`)}
-              className="rounded-xl border border-slate-100 p-4 text-left transition hover:border-adopter hover:shadow-sm"
+              className="group overflow-hidden rounded-2xl border border-slate-100 bg-white text-left transition hover:-translate-y-1 hover:shadow-lift"
             >
-              {a.foto && (
-                <img
-                  src={a.foto}
-                  alt={a.name}
-                  className="mb-3 h-32 w-full rounded-lg object-cover"
-                  onError={(e) => { e.currentTarget.style.display = "none"; }}
-                />
-              )}
-              <p className="text-sm font-bold text-ink">{a.name}</p>
-              <p className="mt-0.5 text-xs text-muted">
-                {(a.caracteristicas || []).slice(0, 2).join(" · ") || a.institution}
-              </p>
+              <div className="h-44 w-full overflow-hidden bg-adopter-soft">
+                {a.foto && (
+                  <img
+                    src={a.foto}
+                    alt={a.name}
+                    className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                )}
+              </div>
+              <div className="p-4">
+                <p className="text-lg font-extrabold text-adopter">{a.name}</p>
+                <p className="mt-0.5 text-sm text-muted">{a.institution}</p>
+                {a.caracteristicas?.length > 0 && (
+                  <p className="mt-1.5 truncate text-xs text-muted">
+                    {a.caracteristicas.slice(0, 2).join(" · ")}
+                  </p>
+                )}
+              </div>
             </button>
-          ))}
-        </div>
-      </Panel>
-
-      <Panel title="Todos os animais disponíveis" subtitle="Lista completa vinda do backend, já com os filtros acima">
-        <div className="space-y-3">
-          {animais.map((a, i) => (
-            <Row
-              key={a.id}
-              avatar={a.foto}
-              title={`${i + 1}. ${a.name}`}
-              subtitle={(a.caracteristicas || []).join(" · ") || a.institution}
-              onClick={() => navigate(`/adotante/animais/${a.id}`)}
-              right={<StatusBadge status={a.status} tone="green" />}
-            />
           ))}
         </div>
       </Panel>

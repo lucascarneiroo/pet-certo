@@ -11,10 +11,10 @@ export default {
         muted: "#6B7280",
         canvas: "#F6F4FB",
         brand: {
-          DEFAULT: "#6A4C8C",
-          dark: "#553C72",
-          soft: "#EFE8F5",
-          accent: "#F08A5D",
+          DEFAULT: "#6A2C91",
+          dark: "#4E1F6E",
+          soft: "#F1E7F8",
+          accent: "#F2994A",
         },
         admin: {
           DEFAULT: "#3E6B52",
@@ -27,9 +27,9 @@ export default {
           soft: "#E6EDF2",
         },
         adopter: {
-          DEFAULT: "#6A4C8C",
-          dark: "#553C72",
-          soft: "#EFE8F5",
+          DEFAULT: "#6A2C91",
+          dark: "#4E1F6E",
+          soft: "#F1E7F8",
         },
       },
       boxShadow: {

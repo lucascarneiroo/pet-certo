@@ -45,12 +45,12 @@ export default function Landing() {
             <span className="inline-flex items-center rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-dark">
               Adoção responsável, feita simples
             </span>
-            <h1 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight text-ink sm:text-5xl">
-              Encontre seu novo
+            <h1 className="mt-4 text-4xl font-black leading-[1.05] tracking-tight text-adopter sm:text-6xl">
+              Encontre seu
               <br />
-              melhor amigo
+              novo melhor amigo!
             </h1>
-            <p className="mt-3 max-w-xl text-base text-muted">
+            <p className="mt-4 max-w-xl text-lg text-muted">
               Conectamos adotantes e instituições com compatibilidade de verdade — do primeiro
               favorito até a adoção concluída.
             </p>
@@ -75,13 +75,13 @@ export default function Landing() {
             <div className="mt-10 flex flex-wrap gap-3">
               <Link
                 to="/entrar"
-                className="rounded-xl bg-adopter px-6 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-adopter-dark hover:shadow-lift"
+                className="rounded-full bg-adopter px-7 py-3.5 text-sm font-bold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-adopter-dark hover:shadow-lift"
               >
                 Entrar
               </Link>
               <Link
                 to="/cadastro"
-                className="rounded-xl border border-adopter px-6 py-3 text-sm font-semibold text-adopter transition hover:-translate-y-0.5 hover:bg-adopter-soft"
+                className="rounded-full border-2 border-adopter px-7 py-3.5 text-sm font-bold text-adopter transition hover:-translate-y-0.5 hover:bg-adopter-soft"
               >
                 Cadastrar-se
               </Link>

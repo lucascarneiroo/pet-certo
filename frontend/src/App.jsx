@@ -115,7 +115,7 @@ export default function App() {
                 roleTitle="Perfil Adotante"
                 roleDescription="Descoberta, compatibilidade e acompanhamento completo da adoção."
                 items={ADOPTER_ITEMS}
-                theme={{ DEFAULT: "#6A4C8C", dark: "#553C72" }}
+                theme={{ DEFAULT: "#6A2C91", dark: "#4E1F6E" }}
               />
             </RequireRole>
           }
