@@ -8,7 +8,6 @@ linha" — por isso cadastrar um usuário sempre significa duas inserções:
 uma em Usuario e outra na tabela do perfil escolhido.
 """
 import hashlib  # só para verificar hashes antigos (ver _verificar_senha)
-import os
 import re
 from typing import Optional
 
@@ -59,7 +58,6 @@ def _validar_email(email: str) -> None:
 
 
 def _montar_usuario(row: dict) -> Usuario:
-    perfil = row["perfil"]
     return Usuario.from_row(row)
 
 

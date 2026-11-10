@@ -9,6 +9,12 @@ const DESTINATIONS = {
   administrador: "/admin",
 };
 
+const ROTULOS_PERFIL = {
+  adotante: "adotante",
+  instituicao: "instituição / ONG",
+  administrador: "administrador",
+};
+
 export default function Login() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -40,7 +46,11 @@ export default function Login() {
         </div>
         <div className="rounded-3xl bg-white p-8 shadow-lift ring-1 ring-black/[0.03]">
           <h1 className="text-xl font-extrabold text-ink">Entrar</h1>
-          <p className="mt-1 text-sm text-muted">Acesse sua conta Pet Certo</p>
+          <p className="mt-1 text-sm text-muted">
+            {params.get("perfil")
+              ? `Entrando como ${ROTULOS_PERFIL[perfil] || perfil}`
+              : "Acesse sua conta Pet Certo"}
+          </p>
 
           {erro && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{erro}</p>}
 

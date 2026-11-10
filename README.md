@@ -154,6 +154,7 @@ pet-certo/
 
 - [`docs/api.md`](docs/api.md) — referência completa de todas as rotas da API (métodos, autenticação, parâmetros, respostas, exemplos).
 - [`backend/README.md`](backend/README.md) — detalhes de configuração e scripts do backend.
+- [`frontend/README.md`](frontend/README.md) — detalhes de configuração, lint e estrutura do frontend.
 - [`docs/`](docs/) — demais documentos técnicos (arquitetura, modelo de dados, decisões de cada sprint).
 
 ## Equipe
