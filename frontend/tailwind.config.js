@@ -9,7 +9,13 @@ export default {
       colors: {
         ink: "#1F2937",
         muted: "#6B7280",
-        canvas: "#F3F5F7",
+        canvas: "#F6F4FB",
+        brand: {
+          DEFAULT: "#6A4C8C",
+          dark: "#553C72",
+          soft: "#EFE8F5",
+          accent: "#F08A5D",
+        },
         admin: {
           DEFAULT: "#3E6B52",
           dark: "#2F5540",
@@ -28,6 +34,8 @@ export default {
       },
       boxShadow: {
         card: "0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15,23,42,0.04)",
+        soft: "0 8px 24px -8px rgba(90, 60, 130, 0.18)",
+        lift: "0 16px 40px -12px rgba(90, 60, 130, 0.28)",
       },
     },
   },

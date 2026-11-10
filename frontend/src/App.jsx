@@ -71,7 +71,7 @@ export default function App() {
                 roleTitle="Perfil Administrador"
                 roleDescription="Governança de usuários, instituições, animais, processos, permissões e registros."
                 items={ADMIN_ITEMS}
-                theme={{ DEFAULT: "#3E6B52" }}
+                theme={{ DEFAULT: "#3E6B52", dark: "#2F5540" }}
               />
             </RequireRole>
           }
@@ -92,7 +92,7 @@ export default function App() {
                 roleTitle="Perfil Instituição / ONG"
                 roleDescription="Operação diária da instituição, com análise, agenda e indicadores."
                 items={ONG_ITEMS}
-                theme={{ DEFAULT: "#33566F" }}
+                theme={{ DEFAULT: "#33566F", dark: "#274456" }}
               />
             </RequireRole>
           }
@@ -115,7 +115,7 @@ export default function App() {
                 roleTitle="Perfil Adotante"
                 roleDescription="Descoberta, compatibilidade e acompanhamento completo da adoção."
                 items={ADOPTER_ITEMS}
-                theme={{ DEFAULT: "#6A4C8C" }}
+                theme={{ DEFAULT: "#6A4C8C", dark: "#553C72" }}
               />
             </RequireRole>
           }

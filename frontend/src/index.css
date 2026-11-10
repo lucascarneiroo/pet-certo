@@ -13,7 +13,10 @@ html, body, #root {
 }
 
 body {
-  background-color: #F3F5F7;
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(240, 138, 93, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -5% 0%, rgba(106, 76, 140, 0.10), transparent 55%),
+    #F6F4FB;
   color: #1F2937;
   -webkit-font-smoothing: antialiased;
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cadastrarUsuario, login } from "../services/api";
+import Logo from "../components/Logo";
 
 const DESTINATIONS = {
   adotante: "/adotante",
@@ -46,8 +47,12 @@ export default function Signup() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-card">
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex justify-center">
+          <Logo size="md" />
+        </div>
+        <div className="rounded-3xl bg-white p-8 shadow-lift ring-1 ring-black/[0.03]">
         <h1 className="text-xl font-extrabold text-ink">Criar conta</h1>
         <p className="mt-1 text-sm text-muted">
           {perfil === "instituicao" ? "Cadastre sua instituição" : "Comece seu perfil de adotante"}
@@ -62,7 +67,7 @@ export default function Signup() {
               value={form.nome}
               onChange={update("nome")}
               required
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-adopter focus:ring-2 focus:ring-adopter/15"
             />
           </div>
           <div>
@@ -96,7 +101,7 @@ export default function Signup() {
                   value={form.cpf}
                   onChange={update("cpf")}
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-adopter focus:ring-2 focus:ring-adopter/15"
                 />
               </div>
               <div className="col-span-2">
@@ -105,7 +110,7 @@ export default function Signup() {
                   value={form.endereco}
                   onChange={update("endereco")}
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-adopter focus:ring-2 focus:ring-adopter/15"
                 />
               </div>
             </>
@@ -120,7 +125,7 @@ export default function Signup() {
                   value={form.cnpj}
                   onChange={update("cnpj")}
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-adopter focus:ring-2 focus:ring-adopter/15"
                 />
               </div>
               <div>
@@ -129,7 +134,7 @@ export default function Signup() {
                   value={form.localizacao}
                   onChange={update("localizacao")}
                   required
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-adopter focus:ring-2 focus:ring-adopter/15"
                 />
               </div>
               <div className="col-span-2">
@@ -137,7 +142,7 @@ export default function Signup() {
                 <input
                   value={form.info_abrigo}
                   onChange={update("info_abrigo")}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none focus:border-adopter"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-ink outline-none transition focus:border-adopter focus:ring-2 focus:ring-adopter/15"
                 />
               </div>
             </>
@@ -146,11 +151,12 @@ export default function Signup() {
           <button
             type="submit"
             disabled={enviando}
-            className="col-span-2 mt-1 rounded-lg bg-adopter py-2.5 text-sm font-semibold text-white transition hover:bg-adopter-dark disabled:opacity-60"
+            className="col-span-2 mt-1 rounded-xl bg-adopter py-2.5 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-adopter-dark hover:shadow-lift disabled:translate-y-0 disabled:opacity-60"
           >
             {enviando ? "Criando conta..." : "Criar conta"}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );
