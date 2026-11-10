@@ -24,7 +24,7 @@ export function Row({ title, subtitle, right, onClick, className = "", avatar })
           <img
             src={avatar}
             alt=""
-            className="h-11 w-11 shrink-0 rounded-xl object-cover ring-1 ring-black/5"
+            className="h-11 w-11 shrink-0 rounded-xl object-cover object-top ring-1 ring-black/5"
             onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
         )}

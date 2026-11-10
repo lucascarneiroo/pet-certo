@@ -195,7 +195,7 @@ export default function OngAnimals() {
             <img
               src={form.foto}
               alt="Pré-visualização"
-              className="h-28 w-28 rounded-lg object-cover"
+              className="h-28 w-28 rounded-lg object-cover object-top"
               onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           )}

@@ -122,7 +122,7 @@ export default function AnimalDetail() {
             <img
               src={animal.foto}
               alt={animal.name}
-              className="aspect-square w-full rounded-xl object-cover"
+              className="aspect-square w-full rounded-xl object-cover object-top"
               onError={() => setFotoComErro(true)}
             />
           ) : (

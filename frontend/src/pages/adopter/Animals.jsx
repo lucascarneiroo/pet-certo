@@ -88,12 +88,12 @@ export default function AdopterAnimals() {
                 onClick={() => navigate(`/adotante/animais/${a.id}`)}
                 className="group overflow-hidden rounded-2xl border border-slate-100 bg-white text-left transition hover:-translate-y-1 hover:shadow-lift"
               >
-                <div className="h-36 w-full overflow-hidden bg-adopter-soft">
+                <div className="aspect-[4/3] w-full overflow-hidden bg-adopter-soft">
                   {a.foto && (
                     <img
                       src={a.foto}
                       alt={a.name}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      className="h-full w-full object-cover object-top transition duration-300 group-hover:scale-105"
                       onError={(e) => { e.currentTarget.style.display = "none"; }}
                     />
                   )}
@@ -162,12 +162,12 @@ export default function AdopterAnimals() {
               onClick={() => navigate(`/adotante/animais/${a.id}`)}
               className="group overflow-hidden rounded-2xl border border-slate-100 bg-white text-left transition hover:-translate-y-1 hover:shadow-lift"
             >
-              <div className="h-44 w-full overflow-hidden bg-adopter-soft">
+              <div className="aspect-[4/3] w-full overflow-hidden bg-adopter-soft">
                 {a.foto && (
                   <img
                     src={a.foto}
                     alt={a.name}
-                    className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    className="h-full w-full object-cover object-top transition duration-300 group-hover:scale-105"
                     onError={(e) => { e.currentTarget.style.display = "none"; }}
                   />
                 )}
